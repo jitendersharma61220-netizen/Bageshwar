@@ -1,0 +1,43 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.*
+
+# next.js
+.next/
+out/
+build/
+next-env.d.ts
+
+# environment — never commit secrets
+.env
+.env.*
+!.env.example
+
+# uploads and generated content
+/uploads/
+/public/uploads/
+
+# testing and reports
+coverage/
+/reports/
+/.lighthouseci/
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+
+# os / editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
