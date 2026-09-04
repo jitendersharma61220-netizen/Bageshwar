@@ -5,6 +5,10 @@ import { getCrmRepository } from '@/lib/crm/repository';
 import { AdminHeading } from '@/components/admin/AdminChrome';
 import { StageMover } from '@/components/admin/StageMover';
 import { addContactAction, addNoteAction, setNextActionAction } from '@/app/admin/actions';
+import { ResearchPanel } from '@/components/admin/ResearchPanel';
+import { ClaimRow, ListValue } from '@/components/admin/ResearchReview';
+import { ClaimBadge } from '@/components/admin/ClaimBadge';
+import { getProvider } from '@/lib/ai/registry';
 import {
   ACTIVITY_LABELS,
   CATEGORY_LABELS,
@@ -33,9 +37,11 @@ export default async function AccountPage({
   const company = await repository.getCompany(id);
   if (!company) notFound();
 
-  const [contacts, activity] = await Promise.all([
+  const [contacts, activity, research, provider] = await Promise.all([
     repository.listContacts(id),
     repository.listActivity(id),
+    repository.latestResearch(id),
+    getProvider(),
   ]);
 
   const sinceContact = daysSince(company.lastContactedAt);
@@ -120,6 +126,113 @@ export default async function AccountPage({
               </div>
             ) : null}
           </section>
+
+          {research ? (
+            <section aria-labelledby="research-heading">
+              <div className="flex flex-wrap items-baseline justify-between gap-3">
+                <h2
+                  id="research-heading"
+                  className="font-display text-lg font-semibold text-ink-900"
+                >
+                  Research
+                </h2>
+                <p className="text-xs text-ink-500">
+                  {research.provider} · {research.model} ·{' '}
+                  {research.agent}@{research.promptVersion} · {relativeDays(research.ranAt)}
+                </p>
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <span className="text-xs text-ink-500">Overall:</span>
+                <ClaimBadge status={research.claimStatus} />
+                <span className="text-xs text-ink-500">
+                  {research.sources.length} source
+                  {research.sources.length === 1 ? '' : 's'}
+                </span>
+              </div>
+
+              {research.downgrades.length > 0 ? (
+                <div className="mt-4 border border-safety-500/40 bg-safety-500/5 p-4">
+                  <p className="text-sm font-semibold text-safety-600">
+                    {research.downgrades.length} claim
+                    {research.downgrades.length === 1 ? ' was' : 's were'} asserted without
+                    a source and downgraded
+                  </p>
+                  <p className="mt-1.5 text-sm leading-relaxed text-ink-700">
+                    The values are shown below marked as not established. Treat them as
+                    leads to verify, not as findings.
+                  </p>
+                  <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-ink-600">
+                    {research.downgrades.map((d, i) => (
+                      <li key={`${d.path}-${i}`} className="tabular">
+                        {d.path}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              <div className="mt-5 border border-paper-300 bg-paper-50 px-5 py-2">
+                <ClaimRow label="Summary" claim={research.output.summary} />
+                <ClaimRow label="Category" claim={research.output.category} />
+                <ClaimRow label="Head office" claim={research.output.hqLocation} />
+                <ClaimRow
+                  label="Operating regions"
+                  claim={research.output.operatingRegions}
+                  render={(v) => <ListValue value={v} />}
+                />
+                <ClaimRow
+                  label="Current projects"
+                  claim={research.output.currentProjects}
+                  render={(v) => <ListValue value={v} />}
+                />
+                <ClaimRow
+                  label="Upcoming projects"
+                  claim={research.output.upcomingProjects}
+                  render={(v) => <ListValue value={v} />}
+                />
+                <ClaimRow
+                  label="Relevant services"
+                  claim={research.output.relevantServices}
+                  render={(v) => <ListValue value={v} />}
+                />
+                <ClaimRow label="Opportunity" claim={research.output.opportunityType} />
+                <ClaimRow
+                  label="Existing vendors"
+                  claim={research.output.existingVendorInfo}
+                />
+                <ClaimRow
+                  label="Roles to approach"
+                  claim={research.output.decisionMakerRoles}
+                  render={(v) => <ListValue value={v} />}
+                />
+              </div>
+
+              {research.output.openQuestions.length > 0 ? (
+                <div className="mt-4 border border-paper-300 p-4">
+                  <h3 className="text-xs font-semibold tracking-[0.1em] text-ink-900 uppercase">
+                    Open questions
+                  </h3>
+                  <ul className="mt-2 space-y-1.5 text-sm text-ink-700">
+                    {research.output.openQuestions.map((q) => (
+                      <li key={q} className="flex gap-2.5">
+                        <span
+                          aria-hidden="true"
+                          className="mt-1.5 h-1.5 w-1.5 shrink-0 bg-safety-500"
+                        />
+                        {q}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              <p className="mt-4 text-xs leading-relaxed text-ink-500">
+                Research is an input to your decision, not a substitute for it. Nothing
+                here is written onto the account automatically.
+              </p>
+            </section>
+          ) : null}
 
           <section aria-labelledby="contacts-heading">
             <h2
@@ -289,6 +402,12 @@ export default async function AccountPage({
         </div>
 
         <aside className="space-y-6">
+          <ResearchPanel
+            companyId={company.id}
+            hasResearch={research !== null}
+            providerConfigured={provider?.configured ?? false}
+          />
+
           <div className="border border-paper-300 bg-paper-50 p-5">
             <h2 className="text-xs font-semibold tracking-[0.1em] text-ink-900 uppercase">
               Stage

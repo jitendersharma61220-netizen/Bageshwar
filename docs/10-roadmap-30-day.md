@@ -146,14 +146,51 @@ header and footer. The root layout is now document shell and fonts only.
 *Outstanding:* the same Supabase credentials Iteration 3 needs. Until then the
 CRM runs on the in-memory fixture in development only.
 
-### Iteration 5 — Target Account Engine
+### Iteration 5 — Target Account Engine — **code complete**
 
-The AI provider abstraction, the claim governance layer, the runner with its
-logging and gates, and the Market Research Agent.
+**Schema** (migration `0004_ai_governance.sql`): `ai_tasks`, `ai_outputs`,
+`ai_audit_log` and `research_sources`. Three constraints matter:
 
-*Exit:* researching a company produces a sourced account record; every claim
-carries its status and sources; an unsourced fact is demonstrably downgraded;
-`ai_tasks` and `ai_outputs` are populated.
+- an output asserted as `fact` must carry evidence URLs;
+- an approval must name both a person and a time, so "approved by nobody" is
+  unrepresentable;
+- `ai_audit_log` is append-only, enforced by triggers rather than policy alone,
+  so not even the service role can rewrite it.
+
+`pnpm db:validate` now runs 53 checks across four migrations, including that
+the audit trail survives an update and a delete attempt unchanged.
+
+**Governance layer.** Every factual field an agent produces is a `Claim`
+carrying its status and sources. `downgradeUnsourced()` walks the output and
+rewrites any fact with no sources to `unknown` before anything else sees it,
+recording what it changed. The value is kept rather than discarded — a human
+can still judge it — but it can no longer be presented as established.
+
+The rule is enforced three times on purpose: in the runner, by the database
+constraint, and in the review UI, which shows the claim status beside every
+value.
+
+**Provider abstraction.** `AIProvider` with Gemini (default) and OpenAI
+implementations, plus a fixture provider that calls no model. The fixture is
+what makes this iteration verifiable before an API key exists, and it is held
+to the agent's real schema so a drifted fixture fails rather than passing a
+test the live provider would fail.
+
+**Market Research Agent.** Produces a sourced account record. Its prompt
+forbids unsourced facts, makes "unknown" an explicitly good answer, forbids
+naming individuals (that is the Decision Maker agent's job, with its own
+sourcing rule) and forbids inventing contact details. Research does not gate:
+it changes nothing outside the business.
+
+*Done:* 49 governance tests (`pnpm test:ai`) and 15 end-to-end cases driving
+the real UI. Running research in development produces a record where one claim
+was deliberately asserted without a source; the UI shows it downgraded, names
+the field, and keeps the value visible marked "not established". Nothing is
+written onto the account automatically.
+
+*Outstanding:* `GEMINI_API_KEY`. Without it the research button is disabled and
+says so. `AI_PROVIDER=fixture` runs the flow locally; it is refused in
+production.
 
 ### Iteration 6 — Decision maker research
 

@@ -29,6 +29,7 @@ pnpm dev
 | `pnpm content:audit` | Report every unverified company fact — the checklist of what still needs evidence |
 | `pnpm db:validate` | Apply the migrations to an embedded Postgres and assert the constraints behave |
 | `pnpm test:uploads` | Upload validation tests — renamed binaries, traversal, size caps |
+| `pnpm test:ai` | Claim governance tests — unsourced facts, downgrades, agent prompt rules |
 | `pnpm verify` | Everything above, then the production build |
 
 ## The content layer, and why it matters
@@ -79,6 +80,21 @@ Authentication uses Supabase Auth when Supabase is configured. Without it, set
 `ADMIN_DEV_PASSWORD` for a local single-password sign-in — **that path is
 disabled in production**, where an unconfigured deployment shows an explicit
 "not configured" page rather than falling back to a shared password.
+
+## The AI layer
+
+Every factual field an agent produces is a `Claim` carrying how it was arrived
+at (`fact`, `inference`, `recommendation`, `unknown`) and what backs it.
+
+**A claim asserted as fact must name its sources.** That is enforced three
+times: the runner downgrades an unsourced fact to `unknown` before anything
+else sees it, a database check constraint rejects it on insert, and the review
+UI shows the claim status beside every value. A model can be asked to behave
+well and sometimes will not; a constraint cannot be persuaded.
+
+Providers are swappable — Gemini by default, OpenAI available, and a fixture
+provider that calls no model so the whole pipeline is testable without an API
+key. `AI_PROVIDER=fixture` is refused in production.
 
 ## Documentation
 

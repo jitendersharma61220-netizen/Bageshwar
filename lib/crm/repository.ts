@@ -1,4 +1,5 @@
 import 'server-only';
+import type { ResearchRecord } from './research';
 import type {
   Activity,
   ActivityKind,
@@ -46,6 +47,10 @@ export interface CrmRepository {
     summary: string;
     detail?: string | null;
   }): Promise<Activity>;
+
+  /** The most recent research output for an account, if any. */
+  latestResearch(companyId: string): Promise<ResearchRecord | null>;
+  saveResearch(record: ResearchRecord): Promise<void>;
 
   listLeads(options?: { status?: WebsiteLead['status'] }): Promise<WebsiteLead[]>;
   getLead(id: string): Promise<WebsiteLead | null>;

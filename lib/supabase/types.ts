@@ -113,6 +113,10 @@ export type Database = {
       contacts: LooseTable;
       opportunities: LooseTable;
       account_activity: LooseTable;
+      ai_tasks: LooseTable;
+      ai_outputs: LooseTable;
+      ai_audit_log: LooseTable;
+      research_sources: LooseTable;
     };
     /*
      * Empty-key mapped types, not Record<string, never>.
@@ -132,6 +136,8 @@ export type Database = {
       company_category: string;
       claim_status: string;
       activity_kind: string;
+      ai_task_status: string;
+      approval_state: string;
     };
     CompositeTypes: { [_ in never]: never };
   };

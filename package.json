@@ -10,9 +10,10 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "content:audit": "tsx scripts/content-audit.ts",
-    "verify": "pnpm typecheck && pnpm lint && pnpm content:audit && pnpm db:validate && pnpm test:uploads && pnpm build",
+    "verify": "pnpm typecheck && pnpm lint && pnpm content:audit && pnpm db:validate && pnpm test:uploads && pnpm test:ai && pnpm build",
     "db:validate": "tsx scripts/db-validate.ts",
-    "test:uploads": "tsx scripts/test-uploads.ts"
+    "test:uploads": "tsx scripts/test-uploads.ts",
+    "test:ai": "tsx scripts/test-ai-governance.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.115.0",

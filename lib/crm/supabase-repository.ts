@@ -1,6 +1,7 @@
 import 'server-only';
 import { getServiceClient } from '@/lib/supabase/client';
 import type { CrmRepository } from './repository';
+import type { ResearchRecord } from './research';
 import {
   BOARD_STAGES,
   PIPELINE_STAGES,
@@ -384,6 +385,76 @@ export class SupabaseCrmRepository implements CrmRepository {
     }
 
     return toActivity(data as unknown as ActivityRow);
+  }
+
+  /**
+   * Read the latest research for an account.
+   *
+   * Joined from ai_tasks and ai_outputs rather than duplicated onto the
+   * company row, so the account view and the audit trail cannot disagree
+   * about what the model actually produced.
+   */
+  async latestResearch(companyId: string): Promise<ResearchRecord | null> {
+    const { data, error } = await this.client()
+      .from('ai_tasks')
+      .select('*, ai_outputs(*)')
+      .eq('company_id', companyId)
+      .eq('agent', 'market-research')
+      .eq('status', 'succeeded')
+      .order('started_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    await this.fail('latestResearch', error, null);
+    if (!data) return null;
+
+    const task = data as unknown as {
+      id: string;
+      agent: string;
+      prompt_version: string;
+      provider: string;
+      model: string | null;
+      started_at: string;
+      ai_outputs?: {
+        output: unknown;
+        claim_status: ResearchRecord['claimStatus'];
+        evidence_urls: string[] | null;
+        downgrade_reason: string | null;
+        downgraded: boolean;
+      }[];
+    };
+
+    const output = task.ai_outputs?.[0];
+    if (!output) return null;
+
+    return {
+      taskId: task.id,
+      companyId,
+      agent: task.agent,
+      promptVersion: task.prompt_version,
+      provider: task.provider,
+      model: task.model ?? 'unknown',
+      output: output.output as ResearchRecord['output'],
+      claimStatus: output.claim_status,
+      sources: (output.evidence_urls ?? []).map((url) => ({ url })),
+      // Reconstructed from the stored reason. The authoritative record of what
+      // was downgraded is ai_audit_log; this is for display.
+      downgrades: output.downgraded
+        ? (output.downgrade_reason ?? '').split('; ').filter(Boolean).map((entry) => {
+            const [path = '(unknown)', reason = ''] = entry.split(': ');
+            return { path, from: 'fact' as const, to: 'unknown' as const, reason };
+          })
+        : [],
+      ranAt: task.started_at,
+    };
+  }
+
+  /**
+   * No-op: the runner already wrote ai_tasks and ai_outputs inside the run.
+   * Writing again here would duplicate the record and let the two disagree.
+   */
+  async saveResearch(): Promise<void> {
+    return;
   }
 
   async listLeads(options?: { status?: WebsiteLead['status'] }): Promise<WebsiteLead[]> {

@@ -1,6 +1,7 @@
 import 'server-only';
 import { randomUUID } from 'node:crypto';
 import type { CrmRepository } from './repository';
+import type { ResearchRecord } from './research';
 import {
   BOARD_STAGES,
   PIPELINE_STAGES,
@@ -71,6 +72,7 @@ export class InMemoryCrmRepository implements CrmRepository {
   private contacts: Contact[] = [];
   private activity: Activity[] = [];
   private leads: WebsiteLead[] = [];
+  private research = new Map<string, ResearchRecord>();
 
   constructor() {
     this.seed();
@@ -341,6 +343,14 @@ export class InMemoryCrmRepository implements CrmRepository {
       company.updatedAt = now();
     }
     return entry;
+  }
+
+  async latestResearch(companyId: string): Promise<ResearchRecord | null> {
+    return this.research.get(companyId) ?? null;
+  }
+
+  async saveResearch(record: ResearchRecord): Promise<void> {
+    this.research.set(record.companyId, record);
   }
 
   async listLeads(options?: { status?: WebsiteLead['status'] }): Promise<WebsiteLead[]> {

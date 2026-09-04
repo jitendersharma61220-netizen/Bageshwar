@@ -170,6 +170,85 @@ export async function addContactAction(form: FormData): Promise<void> {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Research                                                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Run the Market Research Agent against an account.
+ *
+ * The result is stored and shown for review. Nothing is written onto the
+ * company record automatically: research is an input to a human decision, not
+ * a substitute for one, and an agent silently overwriting a founder's own
+ * notes would be the wrong trade.
+ */
+export async function researchAccountAction(
+  _previous: { error?: string; ok?: boolean } | undefined,
+  form: FormData,
+): Promise<{ error?: string; ok?: boolean }> {
+  const repository = await requireRepository();
+
+  const companyId = text(form, 'companyId', 60);
+  if (!companyId) return { error: 'No account selected.' };
+
+  const company = await repository.getCompany(companyId);
+  if (!company) return { error: 'That account no longer exists.' };
+
+  const { runAgent, NoProviderError } = await import('@/lib/ai/runner');
+  const { marketResearchAgent } = await import('@/lib/ai/agents/market-research');
+
+  try {
+    const result = await runAgent(
+      marketResearchAgent,
+      {
+        companyName: company.name,
+        ...(company.website ? { website: company.website } : {}),
+        ...(company.notes ? { knownContext: company.notes.slice(0, 2000) } : {}),
+      },
+      { companyId },
+    );
+
+    await repository.saveResearch({
+      taskId: result.taskId,
+      companyId,
+      agent: marketResearchAgent.name,
+      promptVersion: marketResearchAgent.promptVersion,
+      provider: result.provider,
+      model: result.model,
+      output: result.output,
+      claimStatus: result.claimStatus,
+      sources: result.sources,
+      downgrades: result.downgrades,
+      ranAt: new Date().toISOString(),
+    });
+
+    await repository.addActivity({
+      companyId,
+      kind: 'note',
+      summary: 'Market research run',
+      detail: [
+        `${result.sources.length} source(s)`,
+        result.downgrades.length > 0
+          ? `${result.downgrades.length} unsourced claim(s) downgraded`
+          : 'no downgrades',
+      ].join(' · '),
+    });
+
+    revalidatePath(`/admin/accounts/${companyId}`);
+    return { ok: true };
+  } catch (error) {
+    if (error instanceof NoProviderError) {
+      return {
+        error:
+          'No AI provider is configured. Set GEMINI_API_KEY to enable research.',
+      };
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('[admin] research failed', companyId, message);
+    return { error: `Research failed: ${message.slice(0, 200)}` };
+  }
+}
+
+/* -------------------------------------------------------------------------- */
 /* Leads                                                                       */
 /* -------------------------------------------------------------------------- */
 

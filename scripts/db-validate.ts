@@ -430,6 +430,125 @@ async function main(): Promise<void> {
     if (res.rows[0]!.linked !== '0') throw new Error('company_id was not cleared');
   });
 
+  console.log('\nAI governance schema');
+
+  await check('ai_tasks, ai_outputs, ai_audit_log and research_sources exist', async () => {
+    const res = await db.query<{ table_name: string }>(
+      `select table_name from information_schema.tables
+       where table_schema = 'public'
+         and table_name in ('ai_tasks','ai_outputs','ai_audit_log','research_sources')`,
+    );
+    if (res.rows.length !== 4) {
+      throw new Error(`found ${res.rows.map((r) => r.table_name).join(', ') || 'none'}`);
+    }
+  });
+
+  await check('RLS is enabled and forced on every AI table', async () => {
+    const res = await db.query<{ relname: string; relrowsecurity: boolean; relforcerowsecurity: boolean }>(
+      `select relname, relrowsecurity, relforcerowsecurity from pg_class
+       where relname in ('ai_tasks','ai_outputs','ai_audit_log','research_sources')`,
+    );
+    for (const row of res.rows) {
+      if (!row.relrowsecurity) throw new Error(`RLS not enabled on ${row.relname}`);
+      if (!row.relforcerowsecurity) throw new Error(`RLS not forced on ${row.relname}`);
+    }
+  });
+
+  await check('no client role may insert an AI task or output', async () => {
+    const res = await db.query<{ tablename: string; policyname: string; cmd: string }>(
+      `select tablename, policyname, cmd from pg_policies
+       where schemaname = 'public'
+         and tablename in ('ai_tasks','ai_outputs','ai_audit_log','research_sources')
+         and cmd in ('INSERT','ALL','DELETE')`,
+    );
+    if (res.rows.length > 0) {
+      throw new Error(
+        `unexpected policy: ${res.rows.map((r) => `${r.tablename}.${r.policyname} (${r.cmd})`).join(', ')}`,
+      );
+    }
+  });
+
+  // A task to hang the output assertions from.
+  await db.exec(`
+    insert into public.ai_tasks (id, agent, prompt_version, provider, model, status)
+    values ('11111111-1111-1111-1111-111111111111', 'market-research', 'v1', 'fixture', 'fixture-1', 'succeeded')
+  `);
+
+  await check('an output asserting fact with evidence inserts', async () => {
+    await db.exec(`
+      insert into public.ai_outputs (task_id, output, claim_status, evidence_urls)
+      values ('11111111-1111-1111-1111-111111111111', '{"name":"Test Co"}'::jsonb, 'fact',
+              array['https://example.com/award-notice'])
+    `);
+  });
+
+  await rejects(db, 'rejects an output asserting fact with no evidence', `
+    insert into public.ai_outputs (task_id, output, claim_status, evidence_urls)
+    values ('11111111-1111-1111-1111-111111111111', '{"name":"Unsourced Co"}'::jsonb, 'fact', '{}')
+  `);
+
+  await check('an unknown needs no evidence', async () => {
+    await db.exec(`
+      insert into public.ai_outputs (task_id, output, claim_status)
+      values ('11111111-1111-1111-1111-111111111111', '{"name":"Unknown Co"}'::jsonb, 'unknown')
+    `);
+  });
+
+  await rejects(db, 'rejects an approval with no approver', `
+    insert into public.ai_outputs (task_id, output, claim_status, approval, approved_at)
+    values ('11111111-1111-1111-1111-111111111111', '{}'::jsonb, 'recommendation', 'approved', now())
+  `);
+
+  await rejects(db, 'rejects an approval with no timestamp', `
+    insert into public.ai_outputs (task_id, output, claim_status, approval, approved_by)
+    values ('11111111-1111-1111-1111-111111111111', '{}'::jsonb, 'recommendation', 'approved',
+            '00000000-0000-0000-0000-000000000000')
+  `);
+
+  await rejects(db, 'rejects an approved_at on an unapproved output', `
+    insert into public.ai_outputs (task_id, output, claim_status, approval, approved_at)
+    values ('11111111-1111-1111-1111-111111111111', '{}'::jsonb, 'recommendation', 'pending', now())
+  `);
+
+  await check('a downgrade is recorded with its reason', async () => {
+    await db.exec(`
+      insert into public.ai_outputs (task_id, output, claim_status, downgraded, downgrade_reason)
+      values ('11111111-1111-1111-1111-111111111111', '{"name":"Downgraded Co"}'::jsonb, 'unknown',
+              true, 'claimed fact with no sources')
+    `);
+    const res = await db.query<{ count: string }>(
+      'select count(*)::text as count from public.ai_outputs where downgraded',
+    );
+    if (res.rows[0]!.count !== '1') throw new Error(`got ${res.rows[0]!.count}`);
+  });
+
+  console.log('\nAudit trail immutability');
+
+  await check('an audit entry can be appended', async () => {
+    await db.exec(`
+      insert into public.ai_audit_log (task_id, event, detail)
+      values ('11111111-1111-1111-1111-111111111111', 'task.started', '{"agent":"market-research"}'::jsonb)
+    `);
+  });
+
+  await rejects(db, 'an audit entry cannot be updated, even by the table owner', `
+    update public.ai_audit_log set event = 'tampered'
+  `);
+
+  await rejects(db, 'an audit entry cannot be deleted, even by the table owner', `
+    delete from public.ai_audit_log
+  `);
+
+  await check('the audit entry survived both attempts unchanged', async () => {
+    const res = await db.query<{ event: string; count: string }>(
+      "select event, count(*) over ()::text as count from public.ai_audit_log limit 1",
+    );
+    if (res.rows.length !== 1) throw new Error('the entry was deleted');
+    if (res.rows[0]!.event !== 'task.started') {
+      throw new Error(`event was changed to ${res.rows[0]!.event}`);
+    }
+  });
+
   await db.close();
 
   console.log('');
