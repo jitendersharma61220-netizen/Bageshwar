@@ -7,6 +7,14 @@ import { industries } from '@/content/industries';
 import { Button } from '@/components/ui/Button';
 import { cn } from '@/lib/cn';
 import type { EnquiryKind } from '@/lib/leads/types';
+import {
+  ACCEPT_ATTRIBUTE,
+  ACCEPTED_EXTENSIONS,
+  MAX_FILE_BYTES,
+  MAX_FILES_PER_ENQUIRY,
+  MAX_TOTAL_BYTES,
+  extensionOf,
+} from '@/lib/leads/upload-validation';
 
 type FieldErrors = Record<string, string>;
 
@@ -15,6 +23,14 @@ interface Props {
   /** Preselect a service, e.g. when the form is placed on a service page. */
   defaultServiceSlug?: string;
   submitLabel?: string;
+  /** Show the document attachment field. Used by the BOQ / tender form. */
+  allowAttachments?: boolean;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
 const labelClass = 'block text-sm font-medium text-ink-900';
@@ -22,15 +38,23 @@ const inputClass =
   'mt-1.5 block w-full rounded-card border border-paper-300 bg-white px-3 py-2.5 text-sm text-ink-900 placeholder:text-ink-500 focus:border-technical-600 focus:ring-1 focus:ring-technical-600 focus:outline-none';
 const errorClass = 'mt-1.5 text-xs text-danger-600';
 
-export function EnquiryForm({ kind, defaultServiceSlug, submitLabel }: Props) {
+export function EnquiryForm({
+  kind,
+  defaultServiceSlug,
+  submitLabel,
+  allowAttachments = false,
+}: Props) {
   const pathname = usePathname();
   const formId = useId();
   const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
   const [message, setMessage] = useState('');
   const [reference, setReference] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const [files, setFiles] = useState<File[]>([]);
+  const [fileError, setFileError] = useState('');
   const renderedAt = useRef(0);
   const successRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Recorded on mount rather than at module load, so it reflects when this
   // visitor actually saw the form.
@@ -42,6 +66,57 @@ export function EnquiryForm({ kind, defaultServiceSlug, submitLabel }: Props) {
     if (status === 'sent') successRef.current?.focus();
   }, [status]);
 
+  /**
+   * Client-side pre-checks only. They exist to give immediate feedback, not to
+   * enforce anything: the server re-validates every file against its leading
+   * bytes, which is the check that actually decides.
+   */
+  function handleFilesSelected(selected: FileList | null) {
+    if (!selected || selected.length === 0) return;
+    setFileError('');
+
+    const next = [...files];
+    const problems: string[] = [];
+
+    for (const file of Array.from(selected)) {
+      if (next.length >= MAX_FILES_PER_ENQUIRY) {
+        problems.push(`Only ${MAX_FILES_PER_ENQUIRY} files can be attached.`);
+        break;
+      }
+      if (next.some((f) => f.name === file.name && f.size === file.size)) {
+        continue; // Already attached.
+      }
+      if (!ACCEPTED_EXTENSIONS.includes(extensionOf(file.name))) {
+        problems.push(`${file.name} is not a supported file type.`);
+        continue;
+      }
+      if (file.size > MAX_FILE_BYTES) {
+        problems.push(
+          `${file.name} is larger than ${Math.round(MAX_FILE_BYTES / 1024 / 1024)} MB.`,
+        );
+        continue;
+      }
+      next.push(file);
+    }
+
+    const total = next.reduce((sum, f) => sum + f.size, 0);
+    if (total > MAX_TOTAL_BYTES) {
+      problems.push(
+        `Attachments total more than ${Math.round(MAX_TOTAL_BYTES / 1024 / 1024)} MB.`,
+      );
+    } else {
+      setFiles(next);
+    }
+
+    if (problems.length > 0) setFileError(problems.join(' '));
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }
+
+  function removeFile(index: number) {
+    setFiles((current) => current.filter((_, i) => i !== index));
+    setFileError('');
+  }
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (status === 'sending') return;
@@ -51,19 +126,25 @@ export function EnquiryForm({ kind, defaultServiceSlug, submitLabel }: Props) {
     setMessage('');
 
     const data = new FormData(event.currentTarget);
-    const payload = {
-      ...Object.fromEntries(data.entries()),
-      kind,
-      sourcePath: pathname,
-      renderedAt: renderedAt.current,
-    };
+    data.delete('documents'); // Re-added below, so the state list is the source of truth.
+    data.set('kind', kind);
+    data.set('sourcePath', pathname);
+    data.set('renderedAt', String(renderedAt.current));
 
     try {
-      const response = await fetch('/api/enquiry', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+      let response: Response;
+
+      if (files.length > 0) {
+        for (const file of files) data.append('documents', file);
+        // No Content-Type header: the browser sets the multipart boundary.
+        response = await fetch('/api/enquiry', { method: 'POST', body: data });
+      } else {
+        response = await fetch('/api/enquiry', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(Object.fromEntries(data.entries())),
+        });
+      }
       const result = (await response.json()) as {
         ok: boolean;
         error?: string;
@@ -80,6 +161,7 @@ export function EnquiryForm({ kind, defaultServiceSlug, submitLabel }: Props) {
 
       setStatus('sent');
       setReference(result.reference ?? null);
+      setFiles([]);
     } catch {
       setStatus('error');
       setMessage(
@@ -266,6 +348,63 @@ export function EnquiryForm({ kind, defaultServiceSlug, submitLabel }: Props) {
           </p>
         ) : null}
       </div>
+
+      {allowAttachments ? (
+        <div>
+          <label htmlFor={`${formId}-documents`} className={labelClass}>
+            Attach BOQ, tender or drawings
+          </label>
+          <p className="mt-1 text-xs text-ink-500">
+            Up to {MAX_FILES_PER_ENQUIRY} files,{' '}
+            {Math.round(MAX_FILE_BYTES / 1024 / 1024)} MB each. Accepted:{' '}
+            {ACCEPTED_EXTENSIONS.join(', ')}. Your documents are stored privately
+            and used only to prepare a response.
+          </p>
+          <input
+            ref={fileInputRef}
+            id={`${formId}-documents`}
+            type="file"
+            name="documents"
+            multiple
+            accept={ACCEPT_ATTRIBUTE}
+            onChange={(e) => handleFilesSelected(e.target.files)}
+            aria-describedby={
+              fileError || fieldErrors.documents ? `${formId}-documents-error` : undefined
+            }
+            className="mt-2.5 block w-full cursor-pointer rounded-card border border-dashed border-paper-300 bg-white px-3 py-3 text-sm text-ink-700 file:mr-4 file:cursor-pointer file:rounded-card file:border-0 file:bg-graphite-900 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-paper-50 hover:border-ink-900/30"
+          />
+
+          {files.length > 0 ? (
+            <ul className="mt-3 divide-y divide-paper-200 border-y border-paper-200">
+              {files.map((file, index) => (
+                <li
+                  key={`${file.name}-${file.size}-${index}`}
+                  className="flex items-center justify-between gap-4 py-2.5 text-sm"
+                >
+                  <span className="min-w-0 flex-1 truncate text-ink-800">{file.name}</span>
+                  <span className="tabular shrink-0 text-xs text-ink-500">
+                    {formatBytes(file.size)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => removeFile(index)}
+                    className="shrink-0 text-xs font-medium text-danger-600 underline-offset-4 hover:underline"
+                  >
+                    Remove
+                    <span className="sr-only"> {file.name}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+
+          {fileError || fieldErrors.documents ? (
+            <p id={`${formId}-documents-error`} className={errorClass} role="alert">
+              {fileError || fieldErrors.documents}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       {/* Honeypot. Hidden from sight and from assistive technology; a real
           visitor never fills it, so a filled value marks the submission. */}

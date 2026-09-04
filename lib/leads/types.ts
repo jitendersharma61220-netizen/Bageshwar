@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { services } from '@/content/services';
 import { industries } from '@/content/industries';
+import type { StoredDocument } from './documents';
 
 const serviceSlugs = services.map((s) => s.slug);
 const industrySlugs = industries.map((i) => i.slug);
@@ -61,8 +62,18 @@ export const enquirySchema = z.object({
 
 export type EnquiryInput = z.infer<typeof enquirySchema>;
 
-/** A validated enquiry, enriched server-side. Never constructed from raw input. */
+/**
+ * A validated enquiry, enriched server-side. Never constructed from raw input.
+ *
+ * `documents` are already stored by the time this exists: the route uploads to
+ * the document store first and passes the resulting metadata here, so a sink
+ * never handles file bytes.
+ */
 export interface Enquiry extends EnquiryInput {
   readonly receivedAt: string;
   readonly id: string;
+  readonly documents: readonly StoredDocument[];
+  /** Request headers captured for attribution. Untrusted; length-bounded. */
+  readonly referrer?: string;
+  readonly userAgent?: string;
 }

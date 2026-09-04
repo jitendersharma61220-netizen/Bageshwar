@@ -27,7 +27,9 @@ pnpm dev
 | `pnpm typecheck` | Strict TypeScript, no emit |
 | `pnpm lint` | ESLint |
 | `pnpm content:audit` | Report every unverified company fact — the checklist of what still needs evidence |
-| `pnpm verify` | typecheck + lint + content audit + build |
+| `pnpm db:validate` | Apply the migrations to an embedded Postgres and assert the constraints behave |
+| `pnpm test:uploads` | Upload validation tests — renamed binaries, traversal, size caps |
+| `pnpm verify` | Everything above, then the production build |
 
 ## The content layer, and why it matters
 
@@ -49,6 +51,22 @@ of what to pull from the corporate presentation.
 
 This exists because the site must never state a client, project, certification
 or number the company cannot evidence.
+
+## Lead capture and document upload
+
+Enquiries go through a pipeline with two kinds of sink. A **durable** sink is
+the system of record — if it fails the request fails. A **notifier** tells
+someone the enquiry arrived — if it fails the lead is already safe, so the
+request succeeds and the failure is logged. An email outage can no longer
+return an error to a visitor whose enquiry we received.
+
+Uploaded BOQ and tender documents are validated against their leading bytes
+rather than their extension or declared type, stored under server-generated
+keys in a private bucket, and never served publicly. See
+[`supabase/README.md`](./supabase/README.md) for the security model.
+
+The site runs fully without Supabase: `LEAD_SINK=console` and
+`DOCUMENT_STORE=filesystem` are a working local configuration.
 
 ## Documentation
 

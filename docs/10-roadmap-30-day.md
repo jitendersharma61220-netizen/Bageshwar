@@ -51,15 +51,50 @@ practices and SEO 100 with performance 93-97.
   third-party requests.
 - Both require the site to be deployed on its real domain first.
 
-### Iteration 3 — Lead capture & BOQ upload
+### Iteration 3 — Lead capture & BOQ upload — **code complete**
 
-Supabase project. Apply the `website_leads` schema. Add `SupabaseSink` behind
-the existing `LeadSink` interface. Add authenticated file upload to a private
-bucket for BOQ and tender documents.
+Migrations, persistence and validated document upload are built and tested.
+Applying them needs a Supabase project, which needs the founder's account.
 
-*Exit:* enquiries land in `website_leads`; documents upload to a private bucket
-with type and size validation; the email notification still fires; no page or
-form component changed.
+**Schema** (`supabase/migrations/`): `website_leads`, `lead_documents`, and a
+private `lead-documents` storage bucket. `pnpm db:validate` runs both files
+against an embedded Postgres and asserts 18 properties — that RLS is enabled
+*and forced*, that no policy grants insert to any client role, that the bucket
+is not public, that the check constraints reject bad data, that the
+`updated_at` trigger fires and that deleting a lead cascades to its documents.
+No Docker and no Supabase project required, so the schema is checked on every
+run.
+
+**Persistence.** `SupabaseSink` writes the lead and its document metadata. The
+sink layer was restructured into a pipeline with an explicit distinction:
+
+- a **durable** sink is the system of record — if it fails, the request fails;
+- a **notifier** tells someone it arrived — if it fails, the lead is already
+  safe, so the request succeeds and the failure is logged.
+
+Iteration 1 had only email, which meant an email outage returned an error to a
+visitor whose enquiry we had in fact received. That is now impossible.
+
+**Upload.** `/api/enquiry` accepts multipart. Every file is validated against
+its *leading bytes*, not its extension or its declared type, so an executable
+renamed to `.pdf` is refused. Storage keys are server-generated UUIDs; the
+visitor's filename is kept as display metadata and never used to build a path.
+`pnpm test:uploads` covers 36 cases including renamed ELF and PE binaries, path
+traversal, dotfiles, control characters, double extensions and size caps.
+
+*Done:* 11 end-to-end multipart cases pass against a running server; files land
+with `0600` permissions under generated keys; field validation, the honeypot and
+the timing check all still apply on the multipart path; per-IP rate limiting
+verified. Lighthouse on `/upload-boq`: a11y 100, best practices 100, SEO 100,
+performance 90.
+
+*Outstanding — needs founder credentials:*
+
+- Create the Supabase project, run `supabase db push`, and set
+  `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
+- Set `LEAD_SINK=supabase` and `DOCUMENT_STORE=supabase`.
+- Until then the site runs on the console sink and the filesystem store, which
+  is a working local configuration, not a stub.
 
 ## Week 2 — Internal system
 

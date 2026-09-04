@@ -35,44 +35,13 @@ export default function UploadBoqPage() {
       <PageHeader
         eyebrow="BOQ / tender"
         title="Send us a BOQ, tender or RFQ"
-        standfirst="Tell us what the document covers and we will review the marking and safety scope in it, then come back with our reading of the items and anything that needs clarification before it can be priced."
+        standfirst="Attach the document and we will review the marking and safety scope in it, then come back with our reading of the items and anything that needs clarification before it can be priced."
       />
 
       <Section tone="light" width="wide">
         <div className="grid gap-12 lg:grid-cols-12 lg:gap-14">
           <div className="lg:col-span-7">
-            {/* File attachment is deliberately absent rather than present and
-                non-functional: document storage arrives with the client portal
-                in a later iteration. Offering an input that discarded files
-                would be worse than telling people how to send them now. */}
-            <div className="rule-accent mb-8 bg-paper-100 py-5 pr-5 pl-6">
-              <h2 className="text-base font-semibold text-ink-900">
-                Sending the document itself
-              </h2>
-              <p className="mt-2 text-sm leading-relaxed text-ink-600">
-                Submit the details below first. We will reply directly, and you can
-                send the BOQ, tender or drawing set as an attachment to that reply.
-                Secure in-browser document upload arrives with our client portal;
-                until then we would rather you had a working route than a form that
-                looked like one.
-              </p>
-              <VerifiedOnly fact={company.contact.email}>
-                {(email) => (
-                  <p className="mt-3 text-sm text-ink-600">
-                    To send documents straight away, email{' '}
-                    <a
-                      href={`mailto:${email}`}
-                      className="font-medium text-technical-700 hover:underline"
-                    >
-                      {email}
-                    </a>
-                    .
-                  </p>
-                )}
-              </VerifiedOnly>
-            </div>
-
-            <EnquiryForm kind="boq" submitLabel="Submit BOQ / Tender Details" />
+            <EnquiryForm kind="boq" allowAttachments submitLabel="Submit BOQ / Tender" />
           </div>
 
           <aside className="lg:col-span-5">
@@ -92,9 +61,24 @@ export default function UploadBoqPage() {
                 ))}
               </ul>
               <p className="mt-5 border-t border-paper-300 pt-4 text-sm leading-relaxed text-ink-600">
-                Documents you send are treated as confidential and used only to
-                prepare a response to your enquiry.
+                Documents you send are stored privately, are never published, and
+                are used only to prepare a response to your enquiry.
               </p>
+
+              <VerifiedOnly fact={company.contact.email}>
+                {(email) => (
+                  <p className="mt-3 text-sm leading-relaxed text-ink-600">
+                    For a tender pack too large to attach here, email{' '}
+                    <a
+                      href={`mailto:${email}`}
+                      className="font-medium text-technical-700 hover:underline"
+                    >
+                      {email}
+                    </a>{' '}
+                    and reference this enquiry.
+                  </p>
+                )}
+              </VerifiedOnly>
             </div>
           </aside>
         </div>
