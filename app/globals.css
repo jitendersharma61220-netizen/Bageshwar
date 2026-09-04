@@ -1,0 +1,184 @@
+@import 'tailwindcss';
+
+/* ==========================================================================
+   Design tokens
+
+   A dark-anchored system: graphite bands carry the hero, proof, capability
+   and conversion sections; content sits on a light ground so that long
+   specification and FAQ pages stay readable. One accent (safety amber) is
+   reserved for calls to action and status, so it keeps meaning.
+   ========================================================================== */
+
+@theme {
+  /* Graphite — the dark shell */
+  --color-graphite-950: #0b0e11;
+  --color-graphite-900: #0e1114;
+  --color-graphite-850: #12161a;
+  --color-graphite-800: #161a1f;
+  --color-graphite-700: #23292f;
+  --color-graphite-600: #333b43;
+  --color-graphite-500: #4d565f;
+  /*
+   * Text tones for dark bands. Values are chosen so that body-sized text clears
+   * 4.5:1 against the graphite backgrounds it sits on, verified with Lighthouse.
+   */
+  --color-graphite-400: #7a838c;
+  --color-graphite-300: #a3acb4;
+  --color-graphite-200: #c6ccd2;
+
+  /* Light content ground */
+  --color-paper-50: #fafaf9;
+  --color-paper-100: #f4f4f2;
+  --color-paper-200: #e7e6e3;
+  --color-paper-300: #d6d4d0;
+
+  /* Ink — text on light */
+  --color-ink-900: #14171a;
+  --color-ink-800: #24282d;
+  --color-ink-700: #3d444b;
+  --color-ink-600: #5a626b;
+  /*
+   * Muted secondary text. Chosen so small text clears 4.5:1 against every
+   * paper ground the site uses, including the composited #f4f4f2 panels
+   * (measured 4.70:1 there, 5.18:1 on white).
+   */
+  --color-ink-500: #666e76;
+
+  /* Safety amber — calls to action and status only */
+  --color-safety-600: #b45309;
+  --color-safety-500: #d97706;
+  --color-safety-400: #f59e0b;
+  --color-safety-300: #fbbf24;
+
+  /* Technical blue — links and informational accents */
+  --color-technical-800: #14425f;
+  --color-technical-700: #1a5478;
+  --color-technical-600: #226b96;
+  --color-technical-400: #4fa3cc;
+
+  --color-success-600: #15803d;
+  --color-danger-600: #b91c1c;
+
+  --font-sans:
+    var(--font-inter), ui-sans-serif, system-ui, -apple-system, 'Segoe UI',
+    Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-display:
+    var(--font-inter-tight), var(--font-inter), ui-sans-serif, system-ui,
+    -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono:
+    ui-monospace, 'SF Mono', 'Cascadia Mono', 'Roboto Mono', Menlo, monospace;
+
+  --spacing-section: 5.5rem;
+  --spacing-section-lg: 7.5rem;
+
+  --radius-card: 2px;
+}
+
+/* ==========================================================================
+   Base
+   ========================================================================== */
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+
+  body {
+    background-color: var(--color-paper-50);
+    color: var(--color-ink-800);
+    font-family: var(--font-sans);
+    font-feature-settings: 'cv05' 1;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+    color: var(--color-ink-900);
+    letter-spacing: -0.018em;
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  /* Numerals line up in specification and quantity tables. */
+  table,
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-safety-500);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background-color: var(--color-safety-300);
+    color: var(--color-ink-900);
+  }
+}
+
+/* ==========================================================================
+   Components
+   ========================================================================== */
+
+@layer components {
+  /* A dark band inverts heading colour so the shell sections read correctly. */
+  .band-dark h1,
+  .band-dark h2,
+  .band-dark h3,
+  .band-dark h4 {
+    color: var(--color-paper-50);
+  }
+
+  .prose-technical {
+    max-width: 68ch;
+  }
+
+  .prose-technical p {
+    margin-block: 1rem;
+    line-height: 1.7;
+  }
+
+  .rule-accent {
+    border-left: 3px solid var(--color-safety-500);
+  }
+}
+
+/* A restrained entrance for section content; disabled under reduced motion. */
+@layer utilities {
+  .fade-up {
+    animation: fade-up 180ms ease-out both;
+  }
+
+  @keyframes fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}
