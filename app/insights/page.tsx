@@ -5,8 +5,8 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { Section } from '@/components/ui/Section';
 import { ConversionBand } from '@/components/sections/ConversionBand';
 import { JsonLd } from '@/components/JsonLd';
-import { insights } from '@/content/insights';
-import { services } from '@/content/services';
+import { insights, readingMinutes } from '@/content/insights';
+import { services, servicesBySlug } from '@/content/services';
 import { buildMetadata } from '@/lib/seo';
 import { breadcrumbSchema, schemaGraph } from '@/lib/schema';
 
@@ -32,46 +32,39 @@ export default function InsightsPage() {
 
       <Section tone="light" width="wide">
         {insights.length > 0 ? (
-          <ul className="grid gap-px bg-paper-300 sm:grid-cols-2 lg:grid-cols-3">
-            {insights.map((insight) => (
-              <li key={insight.slug} className="bg-paper-50">
-                <Link
-                  href={`/insights/${insight.slug}`}
-                  className="group flex h-full flex-col p-6 transition-colors hover:bg-paper-100"
-                >
-                  <h2 className="text-base font-semibold text-ink-900 group-hover:text-technical-700">
-                    {insight.title}
-                  </h2>
-                  <p className="mt-2.5 flex-1 text-sm leading-relaxed text-ink-600">
-                    {insight.directAnswer}
-                  </p>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <div className="max-w-3xl">
-            <div className="rule-accent bg-paper-100 py-6 pr-6 pl-7">
-              <h2 className="text-lg font-semibold text-ink-900">
-                In preparation
-              </h2>
-              <p className="mt-3 leading-relaxed text-ink-600">
-                We are writing this section rather than generating it. Each article
-                will answer one real specification, execution or procurement question
-                in enough depth to be useful to someone actually scoping the work.
-              </p>
-              <p className="mt-3 leading-relaxed text-ink-600">
-                In the meantime, the service pages already carry the substance:
-                specifications, execution sequence, quality checks, cost drivers,
-                common mistakes and FAQs for each capability.
-              </p>
-            </div>
+          <>
+            <ul className="grid gap-px bg-paper-300 lg:grid-cols-2">
+              {insights.map((insight) => {
+                const service = servicesBySlug.get(insight.primaryService);
+                return (
+                  <li key={insight.slug} className="bg-paper-50">
+                    <Link
+                      href={`/insights/${insight.slug}`}
+                      className="group flex h-full flex-col p-7 transition-colors hover:bg-paper-100"
+                    >
+                      <p className="text-xs font-semibold tracking-[0.14em] text-safety-600 uppercase">
+                        {service?.shortName ?? 'Guidance'}
+                      </p>
+                      <h2 className="mt-2.5 text-lg font-semibold text-ink-900 group-hover:text-technical-700">
+                        {insight.title}
+                      </h2>
+                      <p className="mt-3 flex-1 leading-relaxed text-ink-600">
+                        {insight.directAnswer}
+                      </p>
+                      <p className="tabular mt-4 border-t border-paper-200 pt-4 text-xs text-ink-500">
+                        {insight.audience} &middot; {readingMinutes(insight)} min read
+                      </p>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
 
-            <div className="mt-10">
+            <div className="mt-14 border-t border-paper-200 pt-10">
               <h2 className="text-sm font-semibold tracking-[0.14em] text-ink-900 uppercase">
-                Start with a service
+                Browse by service
               </h2>
-              <ul className="mt-4 grid gap-2 sm:grid-cols-2">
+              <ul className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 {services.map((service) => (
                   <li key={service.slug}>
                     <Link
@@ -83,6 +76,17 @@ export default function InsightsPage() {
                   </li>
                 ))}
               </ul>
+            </div>
+          </>
+        ) : (
+          <div className="max-w-3xl">
+            <div className="rule-accent bg-paper-100 py-6 pr-6 pl-7">
+              <h2 className="text-lg font-semibold text-ink-900">In preparation</h2>
+              <p className="mt-3 leading-relaxed text-ink-600">
+                We are writing this section rather than generating it. Each article
+                answers one real specification, execution or procurement question in
+                enough depth to be useful to someone actually scoping the work.
+              </p>
             </div>
           </div>
         )}

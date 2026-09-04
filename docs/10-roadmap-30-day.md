@@ -15,15 +15,41 @@ routes prerender; every route returns 200 with a unique title and one `h1`;
 JSON-LD valid with `FAQPage` only where FAQs render; enquiry API validates,
 rate-limits and delivers.
 
-### Iteration 2 — SEO / AEO content architecture
+### Iteration 2 — SEO / AEO content architecture — **articles complete**
 
-Write the first six insight articles against the Tier 2 and Tier 3 questions in
-[04](./04-seo-aeo-architecture.md). Submit the sitemap to Search Console. Set
-the GA4 property live.
+Seven articles published against the Tier 2 and Tier 3 questions in
+[04](./04-seo-aeo-architecture.md) — one more than planned, because three
+articles cross-referenced a quality inspection checklist and the signage piece
+was the only content supporting the traffic signboards service.
 
-*Exit:* six substantial articles published, each linked to its primary service;
-Search Console verified and receiving the sitemap; GA4 recording page views and
-enquiry submissions.
+| Article | Tier | Primary service |
+| --- | --- | --- |
+| Thermoplastic road marking specifications | 2 | Thermoplastic markings |
+| Road marking retroreflectivity explained | 2 | Thermoplastic markings |
+| Road marking quality inspection checklist | 3 | Thermoplastic markings |
+| How to select a road marking contractor | 3 | Highway & expressway markings |
+| What to include in a road marking RFQ | 3 | Highway & expressway markings |
+| Road stud types and specifications | 2 | Road studs & cat eyes |
+| Retroreflective sheeting classes for traffic signs | 2 | Traffic signboards |
+
+Each declares one primary service and renders on that service page under
+"Guidance on this work", so the hub-and-spoke graph is generated rather than
+hand-maintained. Article schema carries `datePublished` and `dateModified`;
+`FAQPage` count is asserted equal to the visible FAQ count on every article.
+
+*Done:* 37 routes prerender; every article page passes the SEO invariants, the
+Article-schema check and the honesty pass; Lighthouse accessibility, best
+practices and SEO 100 with performance 93-97.
+
+*Outstanding — needs founder credentials, not code:*
+
+- **Google Search Console.** Verify the property and submit
+  `https://www.bageshwarbalaji.com/sitemap.xml`. The verification meta tag is
+  already wired: set `NEXT_PUBLIC_GSC_VERIFICATION` to the token content.
+- **GA4.** Create the property and set `NEXT_PUBLIC_GA4_MEASUREMENT_ID`. The
+  loader renders nothing while unset, so the site currently ships with zero
+  third-party requests.
+- Both require the site to be deployed on its real domain first.
 
 ### Iteration 3 — Lead capture & BOQ upload
 

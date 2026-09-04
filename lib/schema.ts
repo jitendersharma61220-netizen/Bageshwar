@@ -140,6 +140,37 @@ export function faqSchema(faqs: readonly FaqItem[]): Json | null {
   };
 }
 
+/**
+ * Article schema for a knowledge-hub piece.
+ *
+ * The publisher is the Organization node already emitted sitewide, so the
+ * article inherits whatever contact properties are evidenced rather than
+ * restating them.
+ */
+export function articleSchema(article: {
+  slug: string;
+  title: string;
+  metaDescription: string;
+  publishedAt: string;
+  updatedAt: string;
+}): Json {
+  const url = absoluteUrl(`/insights/${article.slug}`);
+  return compact({
+    '@type': 'Article',
+    '@id': `${url}#article`,
+    headline: article.title,
+    description: article.metaDescription,
+    url,
+    mainEntityOfPage: { '@type': 'WebPage', '@id': url },
+    datePublished: article.publishedAt,
+    dateModified: article.updatedAt,
+    author: { '@id': ORGANIZATION_ID },
+    publisher: { '@id': ORGANIZATION_ID },
+    inLanguage: 'en-IN',
+    isAccessibleForFree: true,
+  });
+}
+
 /** Wrap one or more schema objects into a single @graph document. */
 export function schemaGraph(...nodes: (Json | null | undefined)[]): string {
   const graph = nodes.filter((n): n is Json => Boolean(n));

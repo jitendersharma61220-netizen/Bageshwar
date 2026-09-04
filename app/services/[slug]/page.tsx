@@ -21,6 +21,7 @@ import {
 } from '@/components/aeo';
 import { getService, services, servicesBySlug } from '@/content/services';
 import { industriesBySlug } from '@/content/industries';
+import { insightsForService } from '@/content/insights';
 import { buildMetadata } from '@/lib/seo';
 import { breadcrumbSchema, faqSchema, schemaGraph, serviceSchema } from '@/lib/schema';
 
@@ -64,6 +65,8 @@ export default async function ServicePage({
   const relatedServices = service.relatedServices
     .map((s) => servicesBySlug.get(s))
     .filter((s) => s !== undefined);
+
+  const supportingInsights = insightsForService(service.slug);
 
   return (
     <>
@@ -177,6 +180,26 @@ export default async function ServicePage({
                           className="text-technical-700 underline-offset-4 hover:underline"
                         >
                           {industry.name}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              {supportingInsights.length > 0 ? (
+                <div className="border border-paper-300 p-5">
+                  <h2 className="text-xs font-semibold tracking-[0.14em] text-ink-900 uppercase">
+                    Guidance on this work
+                  </h2>
+                  <ul className="mt-3 space-y-2.5 text-sm">
+                    {supportingInsights.map((insight) => (
+                      <li key={insight.slug}>
+                        <Link
+                          href={`/insights/${insight.slug}`}
+                          className="text-technical-700 underline-offset-4 hover:underline"
+                        >
+                          {insight.title}
                         </Link>
                       </li>
                     ))}
