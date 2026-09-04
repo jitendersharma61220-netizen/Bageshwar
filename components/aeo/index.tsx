@@ -62,22 +62,58 @@ export function AeoSection({
 
 /* -------------------------------------------------------------------------- */
 
-export function SpecificationTable({ rows }: { rows: readonly SpecificationRow[] }) {
+/**
+ * Specification table.
+ *
+ * `tone` must match the band it sits on: the light styling is unreadable on a
+ * graphite background, so the component carries both rather than assuming one.
+ */
+export function SpecificationTable({
+  rows,
+  tone = 'light',
+  caption = 'Key specifications',
+  columns,
+}: {
+  rows: readonly SpecificationRow[];
+  tone?: 'light' | 'dark';
+  caption?: string;
+  columns?: { parameter: string; value: string; basis?: string };
+}) {
+  const dark = tone === 'dark';
+  const showBasis = rows.some((row) => row.basis !== undefined);
+  const heads = {
+    parameter: columns?.parameter ?? 'Parameter',
+    value: columns?.value ?? 'Typically specified',
+    basis: columns?.basis ?? 'Basis',
+  };
+
   return (
-    <div className="w-full max-w-full overflow-x-auto border border-paper-300">
-      <table className="w-full min-w-[36rem] border-collapse text-sm">
-        <caption className="sr-only">Key specifications</caption>
+    <div
+      className={cn(
+        'w-full max-w-full overflow-x-auto border',
+        dark ? 'border-graphite-700' : 'border-paper-300',
+      )}
+    >
+      <table className="w-full min-w-[34rem] border-collapse text-sm">
+        <caption className="sr-only">{caption}</caption>
         <thead>
-          <tr className="bg-graphite-900 text-left text-paper-50">
+          <tr
+            className={cn(
+              'text-left',
+              dark ? 'bg-graphite-800 text-paper-50' : 'bg-graphite-900 text-paper-50',
+            )}
+          >
             <th scope="col" className="px-4 py-3 font-semibold">
-              Parameter
+              {heads.parameter}
             </th>
             <th scope="col" className="px-4 py-3 font-semibold">
-              Typically specified
+              {heads.value}
             </th>
-            <th scope="col" className="px-4 py-3 font-semibold">
-              Basis
-            </th>
+            {showBasis ? (
+              <th scope="col" className="px-4 py-3 font-semibold">
+                {heads.basis}
+              </th>
+            ) : null}
           </tr>
         </thead>
         <tbody>
@@ -85,15 +121,30 @@ export function SpecificationTable({ rows }: { rows: readonly SpecificationRow[]
             <tr
               key={row.parameter}
               className={cn(
-                'border-t border-paper-200 align-top',
-                index % 2 === 1 && 'bg-paper-100/60',
+                'border-t align-top',
+                dark ? 'border-graphite-700' : 'border-paper-200',
+                index % 2 === 1 && (dark ? 'bg-graphite-850' : 'bg-paper-100/60'),
               )}
             >
-              <th scope="row" className="px-4 py-3 text-left font-medium text-ink-900">
+              <th
+                scope="row"
+                className={cn(
+                  'px-4 py-3 text-left font-medium',
+                  dark ? 'text-paper-50' : 'text-ink-900',
+                )}
+              >
                 {row.parameter}
               </th>
-              <td className="px-4 py-3 text-ink-700">{row.value}</td>
-              <td className="px-4 py-3 text-ink-500">{row.basis ?? '—'}</td>
+              <td className={cn('px-4 py-3', dark ? 'text-graphite-200' : 'text-ink-700')}>
+                {row.value}
+              </td>
+              {showBasis ? (
+                <td
+                  className={cn('px-4 py-3', dark ? 'text-graphite-300' : 'text-ink-500')}
+                >
+                  {row.basis ?? '\u2014'}
+                </td>
+              ) : null}
             </tr>
           ))}
         </tbody>

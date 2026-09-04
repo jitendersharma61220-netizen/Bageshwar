@@ -7,6 +7,7 @@ import { IndustryStrip } from '@/components/sections/IndustryStrip';
 import { ProofBand } from '@/components/sections/ProofBand';
 import { ProcessBand } from '@/components/sections/ProcessBand';
 import { QualityBand } from '@/components/sections/QualityBand';
+import { MachineryBand } from '@/components/sections/MachineryBand';
 import { ConversionBand } from '@/components/sections/ConversionBand';
 import { Section, SectionHeading } from '@/components/ui/Section';
 import { buildMetadata } from '@/lib/seo';
@@ -29,6 +30,7 @@ export default function HomePage() {
       <ProofBand />
       <ProcessBand />
       <QualityBand />
+      <MachineryBand />
       {insights.length > 0 ? <InsightsTeaser /> : null}
       <ConversionBand />
     </>

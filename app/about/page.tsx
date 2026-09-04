@@ -7,6 +7,8 @@ import { JsonLd } from '@/components/JsonLd';
 import { VerifiedOnly } from '@/components/content/VerifiedOnly';
 import { company } from '@/content/company';
 import { services } from '@/content/services';
+import { SectorsBand } from '@/components/sections/SectorsBand';
+import { MachineryBand } from '@/components/sections/MachineryBand';
 import { buildMetadata } from '@/lib/seo';
 import { breadcrumbSchema, schemaGraph } from '@/lib/schema';
 
@@ -45,6 +47,9 @@ export default function AboutPage() {
             what allows the work to be planned around traffic windows, executed inside
             them, and documented well enough to support billing without a second pass.
           </p>
+          <VerifiedOnly fact={company.experienceStatement}>
+            {(statement) => <p>{statement}</p>}
+          </VerifiedOnly>
           <p>
             Our scope covers thermoplastic markings on highways, expressways and urban
             roads; runway, taxiway and apron markings at airports; yard and floor
@@ -57,7 +62,35 @@ export default function AboutPage() {
         </div>
       </Section>
 
-      <Section tone="muted" labelledBy="operating-heading">
+      <Section tone="muted" labelledBy="purpose-heading">
+        <SectionHeading
+          eyebrow="Mission &amp; vision"
+          title="What we are working towards"
+          id="purpose-heading"
+        />
+        <div className="mt-8 grid gap-px border border-paper-300 bg-paper-300 sm:grid-cols-2">
+          <div className="bg-paper-50 p-6">
+            <h3 className="text-base font-semibold text-ink-900">Our mission</h3>
+            <VerifiedOnly fact={company.mission}>
+              {(mission) => (
+                <p className="mt-2.5 leading-relaxed text-ink-600">{mission}</p>
+              )}
+            </VerifiedOnly>
+          </div>
+          <div className="bg-paper-50 p-6">
+            <h3 className="text-base font-semibold text-ink-900">Our vision</h3>
+            <VerifiedOnly fact={company.vision}>
+              {(vision) => (
+                <p className="mt-2.5 leading-relaxed text-ink-600">{vision}</p>
+              )}
+            </VerifiedOnly>
+          </div>
+        </div>
+      </Section>
+
+      <SectorsBand />
+
+      <Section tone="light" labelledBy="operating-heading">
         <SectionHeading
           eyebrow="Where we work"
           title="Project-based mobilisation across India"
@@ -72,11 +105,35 @@ export default function AboutPage() {
           <VerifiedOnly fact={company.operatingRegions.statesWorkedIn}>
             {(states) => (
               <p className="mt-4 text-ink-600">
-                <span className="font-medium text-ink-900">States worked in: </span>
+                <span className="font-medium text-ink-900">States worked in to date: </span>
                 {states}
               </p>
             )}
           </VerifiedOnly>
+
+          {company.workLocations.length > 0 ? (
+            <div className="mt-8">
+              <h3 className="text-sm font-semibold tracking-[0.14em] text-ink-900 uppercase">
+                Recent work locations
+              </h3>
+              <ul className="mt-4 divide-y divide-paper-200 border-y border-paper-200">
+                {company.workLocations.map((entry, index) => (
+                  <li
+                    key={index}
+                    className="grid gap-1 py-3 text-sm sm:grid-cols-[14rem_1fr] sm:gap-6"
+                  >
+                    <span className="font-medium text-ink-900">{entry.work}</span>
+                    <span className="text-ink-600">{entry.location}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-4 max-w-2xl text-sm leading-relaxed text-ink-500">
+                Full project details, executed quantities and photographs are provided
+                directly on request. We publish a project on this site only once those
+                are documented and cleared for publication.
+              </p>
+            </div>
+          ) : null}
         </div>
       </Section>
 
@@ -107,6 +164,25 @@ export default function AboutPage() {
             <li key={item.title} className="bg-paper-50 p-6">
               <h3 className="text-base font-semibold text-ink-900">{item.title}</h3>
               <p className="mt-2.5 leading-relaxed text-ink-600">{item.detail}</p>
+            </li>
+          ))}
+        </ul>
+      </Section>
+
+      <MachineryBand />
+
+      <Section tone="light" labelledBy="goals-heading">
+        <SectionHeading
+          eyebrow="Where we are going"
+          title="Our strategic goals"
+          standfirst="Stated as goals rather than achievements, because that is what they are."
+          id="goals-heading"
+        />
+        <ul className="mt-10 grid gap-6 sm:grid-cols-3">
+          {company.strategicGoals.map((goal) => (
+            <li key={goal.title} className="border-t-2 border-safety-500 pt-5">
+              <h3 className="text-base font-semibold text-ink-900">{goal.title}</h3>
+              <p className="mt-2.5 text-sm leading-relaxed text-ink-600">{goal.detail}</p>
             </li>
           ))}
         </ul>

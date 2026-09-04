@@ -4,7 +4,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { Section, SectionHeading } from '@/components/ui/Section';
 import { ConversionBand } from '@/components/sections/ConversionBand';
 import { JsonLd } from '@/components/JsonLd';
-import { FaqList, ProseList, StandardsList } from '@/components/aeo';
+import { FaqList, ProseList, SpecificationTable, StandardsList } from '@/components/aeo';
 import { VerifiedOnly } from '@/components/content/VerifiedOnly';
 import { company } from '@/content/company';
 import { buildMetadata } from '@/lib/seo';
@@ -110,6 +110,51 @@ export default function QualityCompliancePage() {
               {company.qualityProcess.map((item) => (
                 <li key={item.title} className="bg-paper-50 p-6">
                   <h2 className="text-base font-semibold text-ink-900">{item.title}</h2>
+                  <p className="mt-2.5 leading-relaxed text-ink-600">{item.detail}</p>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </Section>
+
+      <Section tone="dark" labelledBy="applied-spec-heading">
+        <div className="grid gap-10 lg:grid-cols-12 lg:gap-14">
+          <div className="lg:col-span-4">
+            <SectionHeading
+              eyebrow="Applied specification"
+              title="What we lay, and to what"
+              standfirst="Our standing specification where the contract does not call for something different. Where it does, the contract governs."
+              tone="dark"
+              id="applied-spec-heading"
+            />
+          </div>
+          <div className="min-w-0 lg:col-span-8">
+            <SpecificationTable
+              rows={company.appliedSpecification}
+              tone="dark"
+              caption="Applied specification"
+              columns={{ parameter: 'Parameter', value: 'Our applied specification' }}
+            />
+          </div>
+        </div>
+      </Section>
+
+      <Section tone="light" labelledBy="safety-heading">
+        <div className="grid gap-10 lg:grid-cols-12 lg:gap-14">
+          <div className="lg:col-span-4">
+            <SectionHeading
+              eyebrow="Site safety"
+              title="Working alongside live traffic"
+              standfirst="Most of this work happens next to moving vehicles. Crew safety and traffic safety are the same problem, handled at the same time."
+              id="safety-heading"
+            />
+          </div>
+          <div className="lg:col-span-8">
+            <ul className="grid gap-px border border-paper-300 bg-paper-300 sm:grid-cols-2">
+              {company.siteSafety.map((item) => (
+                <li key={item.title} className="bg-paper-50 p-6">
+                  <h3 className="text-base font-semibold text-ink-900">{item.title}</h3>
                   <p className="mt-2.5 leading-relaxed text-ink-600">{item.detail}</p>
                 </li>
               ))}
