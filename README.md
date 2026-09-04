@@ -68,6 +68,18 @@ keys in a private bucket, and never served publicly. See
 The site runs fully without Supabase: `LEAD_SINK=console` and
 `DOCUMENT_STORE=filesystem` are a working local configuration.
 
+## The admin area
+
+`/admin` is the internal CRM: a Command Center, a pipeline board, accounts with
+contacts and an activity trail, and website leads that convert into accounts in
+one click. It is `noindex`, disallowed in robots.txt, and every route redirects
+to sign-in when unauthenticated.
+
+Authentication uses Supabase Auth when Supabase is configured. Without it, set
+`ADMIN_DEV_PASSWORD` for a local single-password sign-in — **that path is
+disabled in production**, where an unconfigured deployment shows an explicit
+"not configured" page rather than falling back to a shared password.
+
 ## Documentation
 
 The architecture for the full system lives in [`docs/`](./docs) — information

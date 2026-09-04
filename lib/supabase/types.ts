@@ -45,15 +45,25 @@ export type WebsiteLeadRow = {
   internal_note: string | null;
   notified_at: string | null;
   notify_error: string | null;
+  /** Set when the lead is converted into a CRM account (migration 0003). */
+  company_id: string | null;
   created_at: string;
   updated_at: string;
 };
 
 export type WebsiteLeadInsert = Omit<
   WebsiteLeadRow,
-  'id' | 'status' | 'owner_id' | 'internal_note' | 'notified_at' | 'notify_error' | 'created_at' | 'updated_at'
+  | 'id'
+  | 'status'
+  | 'owner_id'
+  | 'internal_note'
+  | 'notified_at'
+  | 'notify_error'
+  | 'company_id'
+  | 'created_at'
+  | 'updated_at'
 > &
-  Partial<Pick<WebsiteLeadRow, 'id' | 'status' | 'notified_at' | 'notify_error'>>;
+  Partial<Pick<WebsiteLeadRow, 'id' | 'status' | 'notified_at' | 'notify_error' | 'company_id'>>;
 
 export type LeadDocumentRow = {
   id: string;
@@ -67,6 +77,22 @@ export type LeadDocumentRow = {
 };
 
 export type LeadDocumentInsert = Omit<LeadDocumentRow, 'id' | 'created_at'>;
+
+/* -------------------------------------------------------------------------- */
+/* CRM (migration 0003)                                                        */
+/*                                                                             */
+/* Typed loosely as Record<string, unknown> rather than enumerated column by   */
+/* column. The CRM repository maps every row explicitly and the SQL is checked */
+/* by `pnpm db:validate`, so duplicating the column list here would add a      */
+/* second place to keep in sync without adding a real guarantee.               */
+/* -------------------------------------------------------------------------- */
+
+type LooseTable = {
+  Row: Record<string, unknown>;
+  Insert: Record<string, unknown>;
+  Update: Record<string, unknown>;
+  Relationships: [];
+};
 
 export type Database = {
   public: {
@@ -83,6 +109,10 @@ export type Database = {
         Update: Partial<LeadDocumentRow>;
         Relationships: [];
       };
+      companies: LooseTable;
+      contacts: LooseTable;
+      opportunities: LooseTable;
+      account_activity: LooseTable;
     };
     /*
      * Empty-key mapped types, not Record<string, never>.
@@ -97,6 +127,11 @@ export type Database = {
     Enums: {
       enquiry_kind: EnquiryKind;
       lead_status: LeadStatus;
+      pipeline_stage: string;
+      account_priority: string;
+      company_category: string;
+      claim_status: string;
+      activity_kind: string;
     };
     CompositeTypes: { [_ in never]: never };
   };

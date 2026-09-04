@@ -259,6 +259,177 @@ async function main(): Promise<void> {
     if (res.rows[0]!.count !== '0') throw new Error(`${res.rows[0]!.count} documents survived`);
   });
 
+  console.log('\nCRM schema');
+
+  await check('companies, contacts, opportunities and account_activity exist', async () => {
+    const res = await db.query<{ table_name: string }>(
+      `select table_name from information_schema.tables
+       where table_schema = 'public'
+         and table_name in ('companies','contacts','opportunities','account_activity')`,
+    );
+    if (res.rows.length !== 4) {
+      throw new Error(`found ${res.rows.map((r) => r.table_name).join(', ') || 'none'}`);
+    }
+  });
+
+  await check('RLS is enabled and forced on every CRM table', async () => {
+    const res = await db.query<{ relname: string; relrowsecurity: boolean; relforcerowsecurity: boolean }>(
+      `select relname, relrowsecurity, relforcerowsecurity from pg_class
+       where relname in ('companies','contacts','opportunities','account_activity')`,
+    );
+    for (const row of res.rows) {
+      if (!row.relrowsecurity) throw new Error(`RLS not enabled on ${row.relname}`);
+      if (!row.relforcerowsecurity) throw new Error(`RLS not forced on ${row.relname}`);
+    }
+  });
+
+  await check('account_activity is append-only for staff', async () => {
+    const res = await db.query<{ cmd: string }>(
+      `select cmd from pg_policies
+       where schemaname = 'public' and tablename = 'account_activity'`,
+    );
+    const cmds = new Set(res.rows.map((r) => r.cmd));
+    if (cmds.has('UPDATE') || cmds.has('DELETE') || cmds.has('ALL')) {
+      throw new Error(`activity trail is mutable: policies allow ${[...cmds].join(', ')}`);
+    }
+    if (!cmds.has('SELECT') || !cmds.has('INSERT')) {
+      throw new Error('staff cannot read or append activity');
+    }
+  });
+
+  await check('no CRM policy grants delete', async () => {
+    const res = await db.query<{ tablename: string; policyname: string; cmd: string }>(
+      `select tablename, policyname, cmd from pg_policies
+       where schemaname = 'public'
+         and tablename in ('companies','contacts','opportunities','account_activity')
+         and cmd in ('DELETE','ALL')`,
+    );
+    if (res.rows.length > 0) {
+      throw new Error(
+        `delete-capable policy: ${res.rows.map((r) => `${r.tablename}.${r.policyname}`).join(', ')}`,
+      );
+    }
+  });
+
+  await check('a manually entered company inserts', async () => {
+    await db.exec(`
+      insert into public.companies (name, category, stage, source)
+      values ('Test Highways EPC Ltd', 'epc', 'target', 'manual')
+    `);
+  });
+
+  await check('stage defaults to target and priority is nullable', async () => {
+    const res = await db.query<{ stage: string; priority: string | null }>(
+      'select stage, priority from public.companies limit 1',
+    );
+    if (res.rows[0]!.stage !== 'target') throw new Error(`stage was ${res.rows[0]!.stage}`);
+    if (res.rows[0]!.priority !== null) throw new Error('priority should default to null');
+  });
+
+  await rejects(db, 'rejects an unknown pipeline stage', `
+    insert into public.companies (name, stage) values ('Bad Stage Co', 'prospecting')
+  `);
+
+  await rejects(db, 'rejects an account score above 100', `
+    insert into public.companies (name, account_score) values ('Overscored Co', 101)
+  `);
+
+  await rejects(db, 'rejects a negative opportunity value', `
+    insert into public.companies (name, opportunity_value) values ('Negative Co', -1)
+  `);
+
+  await rejects(db, 'rejects a researched company asserting fact with no evidence', `
+    insert into public.companies (name, source, claim_status, evidence_urls)
+    values ('Unsourced Research Co', 'market-research-agent', 'fact', '{}')
+  `);
+
+  await check('a researched company with evidence inserts', async () => {
+    await db.exec(`
+      insert into public.companies (name, source, claim_status, evidence_urls)
+      values ('Sourced Research Co', 'market-research-agent', 'fact',
+              array['https://example.com/tender-award'])
+    `);
+  });
+
+  await check('a researched company may record an unknown without evidence', async () => {
+    await db.exec(`
+      insert into public.companies (name, source, claim_status)
+      values ('Unknown Research Co', 'market-research-agent', 'unknown')
+    `);
+  });
+
+  await rejects(db, 'rejects a researched contact with no public source', `
+    insert into public.contacts (company_id, name, source)
+    select id, 'Fabricated Person', 'decision-maker-agent' from public.companies limit 1
+  `);
+
+  await check('a researched contact with a public source inserts', async () => {
+    await db.exec(`
+      insert into public.contacts (company_id, name, designation, source, public_source_url)
+      select id, 'R Sharma', 'Procurement Head', 'decision-maker-agent',
+             'https://www.linkedin.com/in/example'
+      from public.companies limit 1
+    `);
+  });
+
+  await check('a manually entered contact needs no public source', async () => {
+    await db.exec(`
+      insert into public.contacts (company_id, name, source)
+      select id, 'Met At Site', 'manual' from public.companies limit 1
+    `);
+  });
+
+  await check('activity records a stage change', async () => {
+    await db.exec(`
+      insert into public.account_activity (company_id, kind, summary, from_stage, to_stage)
+      select id, 'stage_change', 'Moved to researched', 'target', 'researched'
+      from public.companies limit 1
+    `);
+    const res = await db.query<{ count: string }>(
+      "select count(*)::text as count from public.account_activity where kind = 'stage_change'",
+    );
+    if (res.rows[0]!.count !== '1') throw new Error(`got ${res.rows[0]!.count}`);
+  });
+
+  await check('website_leads can be linked to a company', async () => {
+    await db.exec(`
+      insert into public.website_leads (kind, name, company, email, phone, message)
+      values ('quote', 'Lead Person', 'Lead Co', 'lead@example.com', '+91 90000 00000',
+              'A message long enough to satisfy the constraint.')
+    `);
+    await db.exec(`
+      update public.website_leads
+      set company_id = (select id from public.companies limit 1)
+      where company_id is null
+    `);
+    const res = await db.query<{ count: string }>(
+      'select count(*)::text as count from public.website_leads where company_id is not null',
+    );
+    if (res.rows[0]!.count === '0') throw new Error('link did not persist');
+  });
+
+  await check('deleting a company cascades to contacts and activity', async () => {
+    await db.exec('delete from public.companies');
+    const contacts = await db.query<{ count: string }>(
+      'select count(*)::text as count from public.contacts',
+    );
+    const activity = await db.query<{ count: string }>(
+      'select count(*)::text as count from public.account_activity',
+    );
+    if (contacts.rows[0]!.count !== '0') throw new Error('contacts survived');
+    if (activity.rows[0]!.count !== '0') throw new Error('activity survived');
+  });
+
+  await check('deleting a company detaches rather than deletes its website lead', async () => {
+    const res = await db.query<{ count: string; linked: string }>(
+      `select count(*)::text as count,
+              count(company_id)::text as linked
+       from public.website_leads`,
+    );
+    if (res.rows[0]!.count === '0') throw new Error('the lead was deleted with the company');
+    if (res.rows[0]!.linked !== '0') throw new Error('company_id was not cleared');
+  });
+
   await db.close();
 
   console.log('');

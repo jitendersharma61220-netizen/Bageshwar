@@ -1,10 +1,12 @@
 import Link from 'next/link';
+import { SiteShell } from '@/components/layout/SiteShell';
 import { Section } from '@/components/ui/Section';
 import { ButtonLink } from '@/components/ui/Button';
 import { services } from '@/content/services';
 
 export default function NotFound() {
   return (
+    <SiteShell>
     <Section tone="light" width="narrow" className="py-24">
       <p className="text-xs font-semibold tracking-[0.14em] text-safety-600 uppercase">
         404
@@ -38,5 +40,6 @@ export default function NotFound() {
         </ul>
       </div>
     </Section>
+    </SiteShell>
   );
 }

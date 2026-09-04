@@ -98,14 +98,53 @@ performance 90.
 
 ## Week 2 — Internal system
 
-### Iteration 4 — CRM
+### Iteration 4 — CRM — **code complete**
 
-Supabase Auth. Apply the account, contact, opportunity and outreach schema with
-RLS. Build the pipeline board and the account detail view. Build the Founder
-Command Center shell.
+**Schema** (migration `0003_crm.sql`): `companies`, `contacts`,
+`opportunities`, `account_activity`, plus a `company_id` link on
+`website_leads`. Two governance constraints are enforced by the database, not
+by convention:
 
-*Exit:* founder can sign in; add a company by hand; move it through stages;
-website leads appear in the pipeline.
+- a company row from a non-manual source asserting `fact` must carry evidence
+  URLs;
+- a contact from a non-manual source must name the public professional source
+  it came from — there is no column, and no code path, for a guessed email.
+
+`account_activity` is append-only: staff may select and insert, and no policy
+grants update or delete, so the trail cannot be rewritten after the fact. No
+CRM policy grants delete at all. `pnpm db:validate` now asserts 38 properties
+across all three migrations.
+
+**Auth.** Supabase Auth when configured; a single development password
+otherwise, so the CRM can be run before a Supabase project exists. The
+development path is disabled in production by three separate checks, and a
+production deployment with nothing configured shows an explicit "not
+configured" page rather than falling back to a shared password.
+
+**Repository.** `CrmRepository` with a Supabase implementation and an
+in-memory fixture for local development, following the LeadSink and
+DocumentStore pattern. The fixture is a development aid, not a second source of
+truth — it does not re-implement the check constraints, and `getCrmRepository()`
+refuses to select it in production.
+
+**UI.** Command Center with summary cards, today's actions, new enquiries and
+high-priority accounts; a pipeline board across the ten open stages with closed
+and holding shown separately; accounts list, create form and detail view with
+contacts, activity trail and next action; website leads with one-click
+conversion to an account.
+
+*Done:* 26 end-to-end cases drive the real UI — auth guard on every admin
+route, wrong-password rejection, sign-in, account creation, stage moves with
+activity recorded, notes, contacts, board rendering, lead conversion and sign
+out. Verified separately that a production build with `ADMIN_DEV_PASSWORD` set
+still refuses to offer it.
+
+*Structural change:* the public site moved into an `app/(site)/` route group
+with its own shell, because the admin pages were rendering inside the marketing
+header and footer. The root layout is now document shell and fonts only.
+
+*Outstanding:* the same Supabase credentials Iteration 3 needs. Until then the
+CRM runs on the in-memory fixture in development only.
 
 ### Iteration 5 — Target Account Engine
 

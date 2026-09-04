@@ -8,7 +8,8 @@ export default function robots(): MetadataRoute.Robots {
         userAgent: '*',
         allow: '/',
         // The enquiry endpoint accepts POST only; there is nothing to crawl.
-        disallow: ['/api/'],
+        // The admin area is authenticated, and additionally sends noindex.
+        disallow: ['/api/', '/admin/'],
       },
     ],
     sitemap: absoluteUrl('/sitemap.xml'),
