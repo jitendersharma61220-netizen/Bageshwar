@@ -5,10 +5,24 @@ import { getCrmRepository } from '@/lib/crm/repository';
 import { AdminHeading } from '@/components/admin/AdminChrome';
 import { StageMover } from '@/components/admin/StageMover';
 import { addContactAction, addNoteAction, setNextActionAction } from '@/app/admin/actions';
-import { ResearchPanel } from '@/components/admin/ResearchPanel';
+import {
+  DecisionMakerPanel,
+  ResearchPanel,
+  ScorePanel,
+} from '@/components/admin/AgentPanel';
 import { ClaimRow, ListValue } from '@/components/admin/ResearchReview';
-import { ClaimBadge } from '@/components/admin/ClaimBadge';
+import { RunMeta } from '@/components/admin/RunMeta';
+import { ScoreReview } from '@/components/admin/ScoreReview';
+import { DecisionMakerReview } from '@/components/admin/DecisionMakerReview';
 import { getProvider } from '@/lib/ai/registry';
+import { marketResearchAgent } from '@/lib/ai/agents/market-research';
+import { opportunityMatchingAgent } from '@/lib/ai/agents/opportunity-matching';
+import { decisionMakerAgent } from '@/lib/ai/agents/decision-maker';
+import type {
+  DecisionMakerRecord,
+  ResearchRecord,
+  ScoreRecord,
+} from '@/lib/crm/research';
 import {
   ACTIVITY_LABELS,
   CATEGORY_LABELS,
@@ -37,10 +51,12 @@ export default async function AccountPage({
   const company = await repository.getCompany(id);
   if (!company) notFound();
 
-  const [contacts, activity, research, provider] = await Promise.all([
+  const [contacts, activity, research, score, decisionMakers, provider] = await Promise.all([
     repository.listContacts(id),
     repository.listActivity(id),
-    repository.latestResearch(id),
+    repository.latestRun<ResearchRecord['output']>(id, marketResearchAgent.name),
+    repository.latestRun<ScoreRecord['output']>(id, opportunityMatchingAgent.name),
+    repository.latestRun<DecisionMakerRecord['output']>(id, decisionMakerAgent.name),
     getProvider(),
   ]);
 
@@ -110,7 +126,9 @@ export default async function AccountPage({
             </dl>
 
             {company.scoreRationale ? (
-              <p className="mt-4 border-l-2 border-safety-500 bg-paper-50 py-3 pr-4 pl-4 text-sm leading-relaxed text-ink-700">
+              // The rationale is the verdict followed by one line per scoring
+              // component, so the line breaks carry the structure.
+              <p className="mt-4 border-l-2 border-safety-500 bg-paper-50 py-3 pr-4 pl-4 text-sm leading-relaxed whitespace-pre-wrap text-ink-700">
                 {company.scoreRationale}
               </p>
             ) : null}
@@ -136,41 +154,9 @@ export default async function AccountPage({
                 >
                   Research
                 </h2>
-                <p className="text-xs text-ink-500">
-                  {research.provider} · {research.model} ·{' '}
-                  {research.agent}@{research.promptVersion} · {relativeDays(research.ranAt)}
-                </p>
               </div>
 
-              <div className="mt-3 flex flex-wrap items-center gap-3">
-                <span className="text-xs text-ink-500">Overall:</span>
-                <ClaimBadge status={research.claimStatus} />
-                <span className="text-xs text-ink-500">
-                  {research.sources.length} source
-                  {research.sources.length === 1 ? '' : 's'}
-                </span>
-              </div>
-
-              {research.downgrades.length > 0 ? (
-                <div className="mt-4 border border-safety-500/40 bg-safety-500/5 p-4">
-                  <p className="text-sm font-semibold text-safety-600">
-                    {research.downgrades.length} claim
-                    {research.downgrades.length === 1 ? ' was' : 's were'} asserted without
-                    a source and downgraded
-                  </p>
-                  <p className="mt-1.5 text-sm leading-relaxed text-ink-700">
-                    The values are shown below marked as not established. Treat them as
-                    leads to verify, not as findings.
-                  </p>
-                  <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-ink-600">
-                    {research.downgrades.map((d, i) => (
-                      <li key={`${d.path}-${i}`} className="tabular">
-                        {d.path}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
+              <RunMeta run={research} />
 
               <div className="mt-5 border border-paper-300 bg-paper-50 px-5 py-2">
                 <ClaimRow label="Summary" claim={research.output.summary} />
@@ -234,12 +220,21 @@ export default async function AccountPage({
             </section>
           ) : null}
 
+          {score ? <ScoreReview run={score} applied={company.accountScore} /> : null}
+
+          {decisionMakers ? (
+            <DecisionMakerReview
+              run={decisionMakers}
+              existingNames={contacts.map((contact) => contact.name)}
+            />
+          ) : null}
+
           <section aria-labelledby="contacts-heading">
             <h2
               id="contacts-heading"
               className="font-display text-lg font-semibold text-ink-900"
             >
-              Decision makers
+              Recorded contacts
             </h2>
 
             {contacts.length > 0 ? (
@@ -404,7 +399,21 @@ export default async function AccountPage({
         <aside className="space-y-6">
           <ResearchPanel
             companyId={company.id}
-            hasResearch={research !== null}
+            hasRun={research !== null}
+            providerConfigured={provider?.configured ?? false}
+          />
+
+          <ScorePanel
+            companyId={company.id}
+            hasRun={score !== null}
+            disabled={research === null}
+            disabledReason="Research this account first — scoring assesses the research record rather than searching for itself."
+            providerConfigured={provider?.configured ?? false}
+          />
+
+          <DecisionMakerPanel
+            companyId={company.id}
+            hasRun={decisionMakers !== null}
             providerConfigured={provider?.configured ?? false}
           />
 

@@ -1,10 +1,11 @@
 import 'server-only';
 import { getServiceClient } from '@/lib/supabase/client';
 import type { CrmRepository } from './repository';
-import type { ResearchRecord } from './research';
+import type { AgentRunRecord } from './research';
 import {
   BOARD_STAGES,
   PIPELINE_STAGES,
+  type AccountPriority,
   type Activity,
   type ActivityKind,
   type Company,
@@ -276,6 +277,24 @@ export class SupabaseCrmRepository implements CrmRepository {
     return data ? toCompany(data as unknown as CompanyRow) : null;
   }
 
+  async applyScore(
+    companyId: string,
+    score: { total: number; priority: AccountPriority; rationale: string },
+  ): Promise<Company | null> {
+    const { data, error } = await this.client()
+      .from('companies')
+      .update({
+        account_score: Math.max(0, Math.min(100, Math.round(score.total))),
+        priority: score.priority,
+        score_rationale: score.rationale.slice(0, 4000),
+      } as never)
+      .eq('id', companyId)
+      .select(COMPANY_COLUMNS)
+      .maybeSingle();
+    await this.fail('applyScore', error, null);
+    return data ? toCompany(data as unknown as CompanyRow) : null;
+  }
+
   async moveStage(id: string, to: PipelineStage, note?: string): Promise<Company | null> {
     if (!PIPELINE_STAGES.includes(to)) return null;
 
@@ -394,18 +413,28 @@ export class SupabaseCrmRepository implements CrmRepository {
    * company row, so the account view and the audit trail cannot disagree
    * about what the model actually produced.
    */
-  async latestResearch(companyId: string): Promise<ResearchRecord | null> {
+  /**
+   * The latest successful run of an agent against an account.
+   *
+   * Reads `ai_tasks` joined to `ai_outputs` rather than a per-agent table:
+   * the runner already wrote both inside the run, and a second copy would be
+   * a second thing to keep in step with the audit trail.
+   */
+  async latestRun<Output>(
+    companyId: string,
+    agent: string,
+  ): Promise<AgentRunRecord<Output> | null> {
     const { data, error } = await this.client()
       .from('ai_tasks')
       .select('*, ai_outputs(*)')
       .eq('company_id', companyId)
-      .eq('agent', 'market-research')
+      .eq('agent', agent)
       .eq('status', 'succeeded')
       .order('started_at', { ascending: false })
       .limit(1)
       .maybeSingle();
 
-    await this.fail('latestResearch', error, null);
+    await this.fail('latestRun', error, null);
     if (!data) return null;
 
     const task = data as unknown as {
@@ -417,7 +446,7 @@ export class SupabaseCrmRepository implements CrmRepository {
       started_at: string;
       ai_outputs?: {
         output: unknown;
-        claim_status: ResearchRecord['claimStatus'];
+        claim_status: AgentRunRecord<Output>['claimStatus'];
         evidence_urls: string[] | null;
         downgrade_reason: string | null;
         downgraded: boolean;
@@ -427,6 +456,18 @@ export class SupabaseCrmRepository implements CrmRepository {
     const output = task.ai_outputs?.[0];
     if (!output) return null;
 
+    /*
+     * Reconstructed from the stored reason string for display. The
+     * authoritative record of what was downgraded or removed is
+     * `ai_audit_log`, which is append-only and enforced by a trigger; this is
+     * the readable version beside the output it applies to.
+     */
+    const entries = output.downgraded
+      ? (output.downgrade_reason ?? '').split('; ').filter(Boolean)
+      : [];
+    const piiEntries = entries.filter((entry) => / removed from free text$/.test(entry));
+    const downgradeEntries = entries.filter((entry) => !/ removed from free text$/.test(entry));
+
     return {
       taskId: task.id,
       companyId,
@@ -434,26 +475,34 @@ export class SupabaseCrmRepository implements CrmRepository {
       promptVersion: task.prompt_version,
       provider: task.provider,
       model: task.model ?? 'unknown',
-      output: output.output as ResearchRecord['output'],
+      output: output.output as Output,
       claimStatus: output.claim_status,
       sources: (output.evidence_urls ?? []).map((url) => ({ url })),
-      // Reconstructed from the stored reason. The authoritative record of what
-      // was downgraded is ai_audit_log; this is for display.
-      downgrades: output.downgraded
-        ? (output.downgrade_reason ?? '').split('; ').filter(Boolean).map((entry) => {
-            const [path = '(unknown)', reason = ''] = entry.split(': ');
-            return { path, from: 'fact' as const, to: 'unknown' as const, reason };
-          })
-        : [],
+      downgrades: downgradeEntries.map((entry) => {
+        const [path = '(unknown)', reason = ''] = entry.split(': ');
+        return { path, from: 'fact' as const, to: 'unknown' as const, reason };
+      }),
+      piiRemovals: piiEntries.map((entry) => {
+        const [path = '(unknown)', reason = ''] = entry.split(': ');
+        return {
+          path,
+          kind: reason.startsWith('email') ? ('email' as const) : ('phone' as const),
+          // Fingerprints are written to the audit log, not to the output row:
+          // the point of removing a fabricated contact detail is that it stops
+          // existing, so it is not reproduced here either.
+          fingerprint: 'see audit log',
+        };
+      }),
       ranAt: task.started_at,
     };
   }
 
   /**
-   * No-op: the runner already wrote ai_tasks and ai_outputs inside the run.
-   * Writing again here would duplicate the record and let the two disagree.
+   * No-op: the runner already wrote `ai_tasks` and `ai_outputs` inside the run,
+   * before and after the model call respectively. Writing again here would
+   * duplicate the record and could disagree with the audit trail.
    */
-  async saveResearch(): Promise<void> {
+  async saveRun(): Promise<void> {
     return;
   }
 

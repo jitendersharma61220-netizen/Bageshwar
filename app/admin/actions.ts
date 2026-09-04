@@ -170,8 +170,44 @@ export async function addContactAction(form: FormData): Promise<void> {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Research                                                                    */
+/* AI agents                                                                   */
 /* -------------------------------------------------------------------------- */
+
+/**
+ * Every agent action in this file follows the same shape, and the shape is the
+ * point:
+ *
+ *   run the agent → store the run → show it for review → change nothing else
+ *
+ * Nothing an agent produces is written onto the account record by the act of
+ * running it. Adopting a score and adding a contact are separate actions, each
+ * triggered by a person clicking a button, each recorded in the activity trail.
+ * An agent that could silently rewrite the founder's own notes, or import six
+ * names it found somewhere, would be a worse tool than one that proposes and
+ * waits.
+ */
+
+type AgentActionState = { error?: string; ok?: boolean };
+
+/** Shared error handling: a missing provider is a configuration message. */
+async function withProvider(
+  label: string,
+  run: () => Promise<AgentActionState>,
+): Promise<AgentActionState> {
+  const { NoProviderError } = await import('@/lib/ai/runner');
+  try {
+    return await run();
+  } catch (error) {
+    if (error instanceof NoProviderError) {
+      return {
+        error: 'No AI provider is configured. Set GEMINI_API_KEY to enable this.',
+      };
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`[admin] ${label} failed`, message);
+    return { error: `${label} failed: ${message.slice(0, 200)}` };
+  }
+}
 
 /**
  * Run the Market Research Agent against an account.
@@ -182,9 +218,9 @@ export async function addContactAction(form: FormData): Promise<void> {
  * notes would be the wrong trade.
  */
 export async function researchAccountAction(
-  _previous: { error?: string; ok?: boolean } | undefined,
+  _previous: AgentActionState | undefined,
   form: FormData,
-): Promise<{ error?: string; ok?: boolean }> {
+): Promise<AgentActionState> {
   const repository = await requireRepository();
 
   const companyId = text(form, 'companyId', 60);
@@ -193,10 +229,10 @@ export async function researchAccountAction(
   const company = await repository.getCompany(companyId);
   if (!company) return { error: 'That account no longer exists.' };
 
-  const { runAgent, NoProviderError } = await import('@/lib/ai/runner');
-  const { marketResearchAgent } = await import('@/lib/ai/agents/market-research');
+  return withProvider('Research', async () => {
+    const { runAgent } = await import('@/lib/ai/runner');
+    const { marketResearchAgent } = await import('@/lib/ai/agents/market-research');
 
-  try {
     const result = await runAgent(
       marketResearchAgent,
       {
@@ -207,7 +243,7 @@ export async function researchAccountAction(
       { companyId },
     );
 
-    await repository.saveResearch({
+    await repository.saveRun({
       taskId: result.taskId,
       companyId,
       agent: marketResearchAgent.name,
@@ -218,6 +254,7 @@ export async function researchAccountAction(
       claimStatus: result.claimStatus,
       sources: result.sources,
       downgrades: result.downgrades,
+      piiRemovals: result.piiRemovals,
       ranAt: new Date().toISOString(),
     });
 
@@ -225,27 +262,301 @@ export async function researchAccountAction(
       companyId,
       kind: 'note',
       summary: 'Market research run',
-      detail: [
-        `${result.sources.length} source(s)`,
-        result.downgrades.length > 0
-          ? `${result.downgrades.length} unsourced claim(s) downgraded`
-          : 'no downgrades',
-      ].join(' · '),
+      detail: runDetail(result.sources.length, result.downgrades.length, result.piiRemovals.length),
     });
 
     revalidatePath(`/admin/accounts/${companyId}`);
     return { ok: true };
-  } catch (error) {
-    if (error instanceof NoProviderError) {
-      return {
-        error:
-          'No AI provider is configured. Set GEMINI_API_KEY to enable research.',
-      };
-    }
-    const message = error instanceof Error ? error.message : String(error);
-    console.error('[admin] research failed', companyId, message);
-    return { error: `Research failed: ${message.slice(0, 200)}` };
+  });
+}
+
+/** One line describing what governance did to a run, for the activity trail. */
+function runDetail(sources: number, downgrades: number, piiRemovals: number): string {
+  const parts = [`${sources} source${sources === 1 ? '' : 's'}`];
+  parts.push(
+    downgrades > 0 ? `${downgrades} unsourced claim(s) downgraded` : 'no downgrades',
+  );
+  if (piiRemovals > 0) parts.push(`${piiRemovals} contact detail(s) removed`);
+  return parts.join(' · ');
+}
+
+/**
+ * Score the opportunity.
+ *
+ * Requires research to exist, and is given only that research — never the live
+ * web. The scoring agent's job is to assess what was established, and letting
+ * it introduce new facts would make the score unauditable against the record
+ * it is supposedly scoring.
+ *
+ * The model rates eight components; the total and the A/B/C priority are
+ * computed in `scoreOpportunity()`, so the same ratings always give the same
+ * score and the weights are visible in one file.
+ */
+export async function scoreAccountAction(
+  _previous: AgentActionState | undefined,
+  form: FormData,
+): Promise<AgentActionState> {
+  const repository = await requireRepository();
+
+  const companyId = text(form, 'companyId', 60);
+  if (!companyId) return { error: 'No account selected.' };
+
+  const company = await repository.getCompany(companyId);
+  if (!company) return { error: 'That account no longer exists.' };
+
+  const { marketResearchAgent } = await import('@/lib/ai/agents/market-research');
+  const research = await repository.latestRun<
+    Awaited<ReturnType<typeof marketResearchAgent.outputSchema.parse>>
+  >(companyId, marketResearchAgent.name);
+
+  if (!research) {
+    return { error: 'Research this account first — scoring assesses the research record.' };
   }
+
+  return withProvider('Scoring', async () => {
+    const { runAgent } = await import('@/lib/ai/runner');
+    const { opportunityMatchingAgent } = await import('@/lib/ai/agents/opportunity-matching');
+    const { renderResearchForScoring } = await import('@/lib/crm/research-summary');
+
+    const result = await runAgent(
+      opportunityMatchingAgent,
+      {
+        companyName: company.name,
+        researchSummary: renderResearchForScoring(research).slice(0, 12_000),
+        ...(company.notes ? { knownContext: company.notes.slice(0, 2000) } : {}),
+      },
+      { companyId },
+    );
+
+    await repository.saveRun({
+      taskId: result.taskId,
+      companyId,
+      agent: opportunityMatchingAgent.name,
+      promptVersion: opportunityMatchingAgent.promptVersion,
+      provider: result.provider,
+      model: result.model,
+      output: result.output,
+      claimStatus: result.claimStatus,
+      sources: result.sources,
+      downgrades: result.downgrades,
+      piiRemovals: result.piiRemovals,
+      ranAt: new Date().toISOString(),
+    });
+
+    const { scoreOpportunity } = await import('@/lib/ai/agents/opportunity-matching');
+    const scored = scoreOpportunity(result.output);
+
+    await repository.addActivity({
+      companyId,
+      kind: 'note',
+      summary: `Opportunity scored ${scored.total}/100 (priority ${scored.priority.toUpperCase()})`,
+      detail: scored.unevidencedCount > 0
+        ? `${scored.unevidencedCount} of 8 components rated with no evidence cited. Not applied to the account.`
+        : 'All eight components cite evidence. Not applied to the account.',
+    });
+
+    revalidatePath(`/admin/accounts/${companyId}`);
+    return { ok: true };
+  });
+}
+
+/**
+ * Adopt the computed score onto the account.
+ *
+ * The separate step. A score sitting in a review panel informs a person; a
+ * score written onto the record changes what the pipeline shows and what gets
+ * worked on, and that is a decision rather than an output.
+ *
+ * The score is recomputed here from the stored component ratings rather than
+ * being passed through the form, so what lands on the account is the
+ * arithmetic in `scoreOpportunity()` and not a number a client submitted.
+ */
+export async function applyScoreAction(form: FormData): Promise<void> {
+  const repository = await requireRepository();
+
+  const companyId = text(form, 'companyId', 60);
+  if (!companyId) return;
+
+  const { opportunityMatchingAgent, scoreOpportunity } = await import(
+    '@/lib/ai/agents/opportunity-matching'
+  );
+  const { OpportunityMatchingOutputRuntimeCheck } = { OpportunityMatchingOutputRuntimeCheck: null };
+  void OpportunityMatchingOutputRuntimeCheck;
+
+  const run = await repository.latestRun<
+    import('@/lib/ai/agents/opportunity-matching').OpportunityMatchingOutput
+  >(companyId, opportunityMatchingAgent.name);
+  if (!run) return;
+
+  const scored = scoreOpportunity(run.output);
+
+  const rationale = [
+    run.output.verdict,
+    '',
+    ...scored.components.map(
+      (c) => `${c.label}: ${c.rating}/10 (weight ${c.weight}) — ${c.reasoning}`,
+    ),
+    '',
+    `Scored by ${run.agent}@${run.promptVersion} via ${run.provider}/${run.model} on ${run.ranAt}.`,
+    scored.unevidencedCount > 0
+      ? `${scored.unevidencedCount} of 8 components were rated without citing evidence.`
+      : 'All eight components cited evidence.',
+  ].join('\n');
+
+  await repository.applyScore(companyId, {
+    total: scored.total,
+    priority: scored.priority,
+    rationale,
+  });
+
+  await repository.addActivity({
+    companyId,
+    kind: 'note',
+    summary: `Score applied: ${scored.total}/100, priority ${scored.priority.toUpperCase()}`,
+    detail: run.output.verdict.slice(0, 1000),
+  });
+
+  revalidatePath('/admin');
+  revalidatePath('/admin/pipeline');
+  revalidatePath('/admin/accounts');
+  revalidatePath(`/admin/accounts/${companyId}`);
+}
+
+/**
+ * Find who to approach.
+ *
+ * The agent's output schema has no email field and no phone field, so the
+ * usual failure — a confidently invented address — cannot be expressed. What
+ * comes back is roles to target, plus any individuals a public page actually
+ * names, each with the URL that names them.
+ */
+export async function findDecisionMakersAction(
+  _previous: AgentActionState | undefined,
+  form: FormData,
+): Promise<AgentActionState> {
+  const repository = await requireRepository();
+
+  const companyId = text(form, 'companyId', 60);
+  if (!companyId) return { error: 'No account selected.' };
+
+  const company = await repository.getCompany(companyId);
+  if (!company) return { error: 'That account no longer exists.' };
+
+  return withProvider('Decision maker research', async () => {
+    const { runAgent } = await import('@/lib/ai/runner');
+    const { decisionMakerAgent, withSourcedIndividualsOnly } = await import(
+      '@/lib/ai/agents/decision-maker'
+    );
+
+    // Give it the opportunity context so relevance is specific to this account
+    // rather than generic. Sourced from what we already established.
+    const { marketResearchAgent } = await import('@/lib/ai/agents/market-research');
+    const research = await repository.latestRun<
+      import('@/lib/ai/agents/market-research').MarketResearchOutput
+    >(companyId, marketResearchAgent.name);
+    const context =
+      research?.output.opportunityType.value ?? company.notes ?? undefined;
+
+    const result = await runAgent(
+      decisionMakerAgent,
+      {
+        companyName: company.name,
+        ...(company.website ? { website: company.website } : {}),
+        ...(context ? { opportunityContext: context.slice(0, 4000) } : {}),
+      },
+      { companyId },
+    );
+
+    const { output, dropped } = withSourcedIndividualsOnly(result.output);
+
+    await repository.saveRun({
+      taskId: result.taskId,
+      companyId,
+      agent: decisionMakerAgent.name,
+      promptVersion: decisionMakerAgent.promptVersion,
+      provider: result.provider,
+      model: result.model,
+      output,
+      claimStatus: result.claimStatus,
+      sources: result.sources,
+      downgrades: result.downgrades,
+      piiRemovals: result.piiRemovals,
+      ranAt: new Date().toISOString(),
+    });
+
+    await repository.addActivity({
+      companyId,
+      kind: 'note',
+      summary: output.noIndividualsFound
+        ? 'Decision maker research: no named individuals found'
+        : `Decision maker research: ${output.individuals.length} sourced candidate(s)`,
+      detail: [
+        `${output.roles.length} role(s) to target`,
+        dropped > 0 ? `${dropped} unsourced name(s) discarded` : null,
+        result.piiRemovals.length > 0
+          ? `${result.piiRemovals.length} contact detail(s) removed`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(' · '),
+    });
+
+    revalidatePath(`/admin/accounts/${companyId}`);
+    return { ok: true };
+  });
+}
+
+/**
+ * Add one researched individual to the account as a contact.
+ *
+ * One at a time, by a person, from the stored run — never a bulk import.
+ *
+ * The candidate is looked up in the stored output by name rather than being
+ * read out of the form, so a submitted field cannot introduce a person the
+ * agent never returned. Email and phone are written as null explicitly: the
+ * agent had nowhere to put them, and this is the point where a helpful guess
+ * would otherwise creep in.
+ */
+export async function addCandidateContactAction(form: FormData): Promise<void> {
+  const repository = await requireRepository();
+
+  const companyId = text(form, 'companyId', 60);
+  const name = text(form, 'candidateName', 160);
+  if (!companyId || !name) return;
+
+  const { decisionMakerAgent, ROLE_LABELS } = await import('@/lib/ai/agents/decision-maker');
+  const run = await repository.latestRun<
+    import('@/lib/ai/agents/decision-maker').DecisionMakerOutput
+  >(companyId, decisionMakerAgent.name);
+  if (!run) return;
+
+  const candidate = run.output.individuals.find((person) => person.name === name);
+  // No source, no contact. The schema requires one, so this is belt and braces
+  // for a record written by an older prompt version.
+  if (!candidate?.publicSourceUrl) return;
+
+  await repository.createContact({
+    companyId,
+    name: candidate.name,
+    designation: candidate.designation,
+    roleCategory: ROLE_LABELS[candidate.role],
+    email: null,
+    phone: null,
+    linkedinUrl: candidate.profileUrl,
+    publicSourceUrl: candidate.publicSourceUrl,
+    source: `ai:${decisionMakerAgent.name}@${decisionMakerAgent.promptVersion}`,
+  });
+
+  await repository.addActivity({
+    companyId,
+    kind: 'note',
+    summary: `Contact added from research: ${candidate.name}`,
+    detail: `${candidate.designation} · source: ${candidate.publicSourceUrl}${
+      candidate.caveat ? ` · caveat: ${candidate.caveat}` : ''
+    }`,
+  });
+
+  revalidatePath(`/admin/accounts/${companyId}`);
 }
 
 /* -------------------------------------------------------------------------- */

@@ -1,6 +1,7 @@
 import 'server-only';
-import type { ResearchRecord } from './research';
+import type { AgentRunRecord } from './research';
 import type {
+  AccountPriority,
   Activity,
   ActivityKind,
   Company,
@@ -48,9 +49,28 @@ export interface CrmRepository {
     detail?: string | null;
   }): Promise<Activity>;
 
-  /** The most recent research output for an account, if any. */
-  latestResearch(companyId: string): Promise<ResearchRecord | null>;
-  saveResearch(record: ResearchRecord): Promise<void>;
+  /**
+   * The most recent successful run of a given agent against an account.
+   *
+   * One method rather than one per agent: what the CRM stores is the same
+   * shape whichever agent produced it, and a new agent should be readable
+   * without a new repository method.
+   */
+  latestRun<Output>(companyId: string, agent: string): Promise<AgentRunRecord<Output> | null>;
+  saveRun<Output>(record: AgentRunRecord<Output>): Promise<void>;
+
+  /**
+   * Write a computed score onto an account.
+   *
+   * Separate from `updateCompany` because it is a distinct decision: the
+   * scoring agent produces a score, and a human chooses to adopt it. Keeping
+   * it out of the general patch means no other code path can set a priority
+   * as a side effect of editing something else.
+   */
+  applyScore(
+    companyId: string,
+    score: { total: number; priority: AccountPriority; rationale: string },
+  ): Promise<Company | null>;
 
   listLeads(options?: { status?: WebsiteLead['status'] }): Promise<WebsiteLead[]>;
   getLead(id: string): Promise<WebsiteLead | null>;

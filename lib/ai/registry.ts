@@ -44,11 +44,15 @@ export async function getProvider(): Promise<AIProvider | null> {
    * worse than one that plainly says it is not configured.
    */
   if (configured === 'fixture' && process.env.NODE_ENV !== 'production') {
-    const [{ FixtureProvider }, { DEV_RESEARCH_FIXTURE }] = await Promise.all([
+    const [{ FixtureProvider }, fixtures] = await Promise.all([
       import('./providers/fixture'),
       import('./providers/dev-fixture-data'),
     ]);
-    cached = new FixtureProvider({ 'market-research-v1': DEV_RESEARCH_FIXTURE });
+    cached = new FixtureProvider({
+      'market-research-v1': fixtures.DEV_RESEARCH_FIXTURE,
+      'opportunity-matching-v1': fixtures.DEV_SCORE_FIXTURE,
+      'decision-maker-v1': fixtures.DEV_DECISION_MAKER_FIXTURE,
+    });
     return cached;
   }
 

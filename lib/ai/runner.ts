@@ -9,6 +9,7 @@ import {
   type Downgrade,
   type Source,
 } from './claims';
+import { ourContactDetails, scrubPii, type PiiRemoval } from './pii';
 import type { Agent } from './agents/types';
 import { getServiceClient } from '@/lib/supabase/client';
 
@@ -27,6 +28,13 @@ import { getServiceClient } from '@/lib/supabase/client';
  *  2. **Approval.** An agent declaring `requiresApproval` produces an output
  *     marked `pending`. The runner has no code path that performs an outward
  *     action, so "approved" is only ever reachable through a human.
+ *  3. **Contact details.** Every string is scrubbed of anything that reads as
+ *     an email address or phone number, except our own verified ones. Agent
+ *     schemas already omit contact fields; this catches the address a model
+ *     writes into a note instead.
+ *
+ * All three run here rather than in each agent, so a new agent inherits them
+ * by existing rather than by remembering to.
  */
 
 export interface RunOptions {
@@ -42,6 +50,8 @@ export interface RunResult<Output> {
   readonly claimStatus: ClaimStatus;
   readonly sources: readonly Source[];
   readonly downgrades: readonly Downgrade[];
+  /** Contact details stripped from free text before persistence. */
+  readonly piiRemovals: readonly PiiRemoval[];
   readonly requiresApproval: boolean;
   readonly model: string;
   readonly provider: string;
@@ -146,7 +156,16 @@ export async function runAgent<Input, Output>(
   /* Governance                                                              */
   /* ---------------------------------------------------------------------- */
 
-  const { value: governed, downgrades } = downgradeUnsourced(generated.value);
+  const { value: downgraded, downgrades } = downgradeUnsourced(generated.value);
+
+  // Scrubbing runs after downgrading and before anything is written. Our own
+  // verified numbers are allowed through so a future outreach draft can sign
+  // off properly; that list is empty until a human verifies one, and empty is
+  // the safe state.
+  const { value: governed, removals: piiRemovals } = scrubPii(downgraded, {
+    allow: await ourContactDetails(),
+  });
+
   const sources = collectSources(governed);
   const claimStatus = summariseStatus(governed, downgrades);
   const durationMs = Date.now() - startedAt;
@@ -159,6 +178,24 @@ export async function runAgent<Input, Output>(
     await audit(taskId, 'output.downgraded', {
       count: downgrades.length,
       paths: downgrades.map((d) => d.path),
+      promptVersion: agent.promptVersion,
+    });
+  }
+
+  if (piiRemovals.length > 0) {
+    console.warn(
+      `[ai] ${agent.name}@${agent.promptVersion} produced ${piiRemovals.length} contact detail(s) in free text; removed`,
+      piiRemovals.map((r) => `${r.path} (${r.kind})`),
+    );
+    // Fingerprints only. Writing the removed value into the audit log would
+    // put the fabricated contact detail straight back into the database.
+    await audit(taskId, 'output.pii_removed', {
+      count: piiRemovals.length,
+      removals: piiRemovals.map((r) => ({
+        path: r.path,
+        kind: r.kind,
+        fingerprint: r.fingerprint,
+      })),
       promptVersion: agent.promptVersion,
     });
   }
@@ -188,11 +225,14 @@ export async function runAgent<Input, Output>(
       claim_status: claimStatus,
       evidence_urls: sources.map((s) => s.url),
       confidence: null,
-      downgraded: downgrades.length > 0,
+      downgraded: downgrades.length > 0 || piiRemovals.length > 0,
       downgrade_reason:
-        downgrades.length > 0
-          ? downgrades.map((d) => `${d.path}: ${d.reason}`).join('; ').slice(0, 2000)
-          : null,
+        [
+          ...downgrades.map((d) => `${d.path}: ${d.reason}`),
+          ...piiRemovals.map((r) => `${r.path}: ${r.kind} removed from free text`),
+        ]
+          .join('; ')
+          .slice(0, 2000) || null,
       // The gate. An agent whose effects leave the building produces a pending
       // output; nothing in this runner can move it to approved.
       approval: agent.requiresApproval ? 'pending' : 'not_required',
@@ -221,6 +261,7 @@ export async function runAgent<Input, Output>(
     claimStatus,
     sourceCount: sources.length,
     downgraded: downgrades.length,
+    piiRemoved: piiRemovals.length,
     requiresApproval: agent.requiresApproval,
   });
 
@@ -230,6 +271,7 @@ export async function runAgent<Input, Output>(
     claimStatus,
     sources,
     downgrades,
+    piiRemovals,
     requiresApproval: agent.requiresApproval,
     model: generated.model,
     provider: provider.name,

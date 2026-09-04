@@ -74,7 +74,7 @@ export interface Claim<T> {
 | `recommendation` | Our suggested action |
 | `unknown` | Not established. **This is a valid, expected output** |
 
-### Two structural guarantees
+### Three structural guarantees
 
 These are enforced in code and in the database, not requested in a prompt:
 
@@ -87,6 +87,23 @@ These are enforced in code and in the database, not requested in a prompt:
    runner writes a pending-approval record and returns; it has no code path that
    performs the outward action. Sending, quoting and deciding are separate,
    human-triggered operations.
+
+3. **Contact details.** `lib/ai/pii.ts` scrubs every string in every agent
+   output before persistence. Anything that reads as an email address or a
+   phone number is replaced with a visible marker and the removal is recorded
+   as a fingerprint — the domain, or the length and last two digits — never the
+   value, because writing it into the audit log would put the fabricated detail
+   straight back into the database.
+
+   Our own contact details are exempt, and the allow list is read from the
+   verified content layer rather than from configuration. It is empty until a
+   human verifies a number, and empty is the safe state.
+
+   The patterns are narrow by design: this system reads text about chainages,
+   IRC clause numbers, MoRTH section references, retroreflectivity figures and
+   rupee amounts, and a scrubber that mangled those would be switched off within
+   a week. The negative cases in `scripts/test-ai-governance.ts` are the
+   specification.
 
 A model can be prompted to behave well and sometimes will not. A constraint
 cannot be persuaded.
@@ -115,7 +132,25 @@ procurement fit, portfolio relevance and strategic value. Assigns priority
 A (immediate), B (nurture) or C (low), and — importantly — explains why. A score
 without reasoning is not actionable.
 
-`requiresApproval: false`.
+**The model does not produce the total.** It rates the eight components 0–10
+and writes a reason for each; `scoreOpportunity()` computes the weighted total
+and the priority band in TypeScript. Three consequences: the score is
+reproducible, so a change in ranking means the assessment changed rather than
+the arithmetic; the weights live in one file and can be reviewed and adjusted;
+and a model cannot talk itself into priority A. Ratings are clamped to 0–10 on
+the way in, so a returned `99` cannot push the total out of range.
+
+Each rating also carries `basedOn` — which findings from the research record
+support it. An empty array is an accepted answer and the CRM shows it as
+&ldquo;rated without citing evidence&rdquo;, because an account scoring 80 on
+five findings and three guesses is a different proposition from one scoring 80
+on eight findings.
+
+The agent is given the stored research record and nothing else. It does not
+research, so the score stays auditable against the record it scores.
+
+`requiresApproval: false`. Adopting a score onto the account record is a
+separate, human-triggered action; running the agent changes nothing.
 
 ### 3. Decision Maker Research Agent
 
@@ -128,13 +163,28 @@ Tendering/Estimation, Business Development.
 
 **Hard constraints, enforced in the output schema:**
 
-- Every contact requires a `public_source_url`. No source, no record.
-- **No fabricated contact information.** Email addresses and phone numbers are
-  never guessed, pattern-derived, or inferred from a company's email format.
+- Every contact requires a `public_source_url`. No source, no record — and the
+  field is required rather than nullable, so a person with no source cannot be
+  expressed at all.
+- **No fabricated contact information.** The output schema has **no email field
+  and no phone field**. Not optional ones, not nullable ones — none. A model
+  cannot return what the schema cannot hold, and the schema is enforced by the
+  provider before the runner sees the value. The remaining gap — an address
+  written into a sentence instead — is closed by the scrub in guarantee 3
+  above.
 - **No scraping of private or sensitive data.** Public professional sources only.
 
 Where an individual cannot be identified, the agent returns the *role* to
-target. A named role is useful; an invented person is a liability.
+target, and `noIndividualsFound` says so explicitly. The CRM renders that as a
+complete answer rather than an empty list, because presenting roles as a
+failure state is exactly the pressure that produces invented names. A named
+role is useful — the founder can telephone the office and ask for procurement.
+An invented person is a liability.
+
+Candidates reach the CRM as proposals. They are added one at a time by a
+person, looked up in the stored run by name so a submitted form field cannot
+introduce someone the agent never returned, and written with `email` and
+`phone` explicitly null.
 
 `requiresApproval: false` for research; the resulting outreach is gated.
 

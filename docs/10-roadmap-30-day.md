@@ -192,13 +192,47 @@ written onto the account automatically.
 says so. `AI_PROVIDER=fixture` runs the flow locally; it is refused in
 production.
 
-### Iteration 6 — Decision maker research
+### Iteration 6 — Decision maker research — **code complete**
 
-The Opportunity Matching Agent and the Decision Maker Research Agent.
+The Opportunity Matching Agent and the Decision Maker Research Agent, plus the
+contact-detail scrub that sits under both.
+
+**Scoring.** Eight components rated 0–10 by the model, each with written
+reasoning and a `basedOn` list naming the research findings behind it. The
+total and the A/B/C band are computed in TypeScript from fixed weights, so the
+model cannot produce the number it is judged by, ratings are clamped to the
+scale, and the same ratings always give the same score. A component rated with
+an empty `basedOn` is shown as &ldquo;rated without citing evidence&rdquo;
+rather than quietly averaged in.
+
+**Decision makers.** The output schema carries no email field and no phone
+field, so a fabricated address is unrepresentable rather than merely
+discouraged. Every named individual requires a public source URL. Finding
+nobody is a first-class result: `noIndividualsFound` plus the roles to target,
+which the founder can act on through a switchboard.
+
+**Contact-detail scrub** (`lib/ai/pii.ts`). Every string in every agent output
+is scanned before persistence; anything reading as an email address or phone
+number is replaced with a visible marker and recorded as a fingerprint, never
+as the value. Our own verified numbers pass through — that list is empty until
+a human verifies one.
+
+**In the CRM.** Score, component breakdown and candidates render on the account
+page for review. Nothing is written onto the account by running an agent:
+adopting a score and adding a contact are separate actions, each taken by a
+person and each recorded in the activity trail.
 
 *Exit:* accounts are scored 0–100 with component breakdown and reasoning;
 contacts carry public source URLs; **no fabricated contact detail appears in any
 output** — verified by review of a sample of at least twenty accounts.
+
+*Met.* `pnpm test:ai` runs 144 checks, including a sweep across a sample of
+twenty-four accounts, each carrying a different way a model might smuggle a
+contact detail past a schema with no field for one. None survives into a stored
+output. The false-positive cases — IRC citations, chainages, rupee amounts,
+tender identifiers, retroreflectivity figures — are asserted alongside them,
+because a scrubber that mangles a specification is a scrubber that gets turned
+off.
 
 ## Week 3 — Outbound
 

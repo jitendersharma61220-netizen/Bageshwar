@@ -1,10 +1,11 @@
 import 'server-only';
 import { randomUUID } from 'node:crypto';
 import type { CrmRepository } from './repository';
-import type { ResearchRecord } from './research';
+import type { AgentRunRecord } from './research';
 import {
   BOARD_STAGES,
   PIPELINE_STAGES,
+  type AccountPriority,
   type Activity,
   type ActivityKind,
   type Company,
@@ -72,7 +73,8 @@ export class InMemoryCrmRepository implements CrmRepository {
   private contacts: Contact[] = [];
   private activity: Activity[] = [];
   private leads: WebsiteLead[] = [];
-  private research = new Map<string, ResearchRecord>();
+  /** Keyed by `${companyId}:${agent}`, holding the latest run of each. */
+  private runs = new Map<string, AgentRunRecord<unknown>>();
 
   constructor() {
     this.seed();
@@ -261,6 +263,19 @@ export class InMemoryCrmRepository implements CrmRepository {
     return company;
   }
 
+  async applyScore(
+    companyId: string,
+    score: { total: number; priority: AccountPriority; rationale: string },
+  ): Promise<Company | null> {
+    const company = this.companies.find((c) => c.id === companyId);
+    if (!company) return null;
+    company.accountScore = score.total;
+    company.priority = score.priority;
+    company.scoreRationale = score.rationale;
+    company.updatedAt = now();
+    return company;
+  }
+
   async moveStage(id: string, to: PipelineStage, note?: string): Promise<Company | null> {
     const company = this.companies.find((c) => c.id === id);
     if (!company) return null;
@@ -345,12 +360,15 @@ export class InMemoryCrmRepository implements CrmRepository {
     return entry;
   }
 
-  async latestResearch(companyId: string): Promise<ResearchRecord | null> {
-    return this.research.get(companyId) ?? null;
+  async latestRun<Output>(
+    companyId: string,
+    agent: string,
+  ): Promise<AgentRunRecord<Output> | null> {
+    return (this.runs.get(`${companyId}:${agent}`) as AgentRunRecord<Output>) ?? null;
   }
 
-  async saveResearch(record: ResearchRecord): Promise<void> {
-    this.research.set(record.companyId, record);
+  async saveRun<Output>(record: AgentRunRecord<Output>): Promise<void> {
+    this.runs.set(`${record.companyId}:${record.agent}`, record as AgentRunRecord<unknown>);
   }
 
   async listLeads(options?: { status?: WebsiteLead['status'] }): Promise<WebsiteLead[]> {

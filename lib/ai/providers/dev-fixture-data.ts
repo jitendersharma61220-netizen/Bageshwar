@@ -1,4 +1,6 @@
 import type { MarketResearchOutput } from '../agents/market-research';
+import type { OpportunityMatchingOutput } from '../agents/opportunity-matching';
+import type { DecisionMakerOutput } from '../agents/decision-maker';
 
 /**
  * A canned research response for local development.
@@ -102,4 +104,134 @@ export const DEV_RESEARCH_FIXTURE: MarketResearchOutput = {
     'Confirm the head office location — the fixture asserted it without a source.',
     'Confirm whether the safety scope is subcontracted or self-performed.',
   ],
+};
+
+/**
+ * A canned scoring response for local development.
+ *
+ * Deliberately mixed: two components are rated with an empty `basedOn`, so the
+ * account view demonstrates the "rated without citing evidence" warning rather
+ * than only the clean path. The ratings are chosen to land the total in the B
+ * band, which is the interesting case — an account worth nurturing rather than
+ * an obvious yes or an obvious no.
+ */
+export const DEV_SCORE_FIXTURE: OpportunityMatchingOutput = {
+  serviceFit: {
+    rating: 8,
+    reasoning:
+      'The award scope includes safety works, which is exactly what we execute. Demo data.',
+    basedOn: ['Services they may need from us: highway-expressway-marking, road-studs-cat-eyes'],
+  },
+  projectFit: {
+    rating: 7,
+    reasoning: 'One live widening package with associated safety works. Demo data.',
+    basedOn: ['Current projects: Demo state highway four-laning'],
+  },
+  locationFit: {
+    rating: 6,
+    reasoning:
+      'Gujarat, where we have verified execution experience. Demo data.',
+    basedOn: ['Operating regions: Gujarat, Rajasthan'],
+  },
+  scaleFit: {
+    rating: 5,
+    reasoning:
+      'No package value was reported, so the size is unknown. Rated as unknown deserves rather than assumed comfortable.',
+    basedOn: [],
+  },
+  timingFit: {
+    rating: 6,
+    reasoning:
+      'The package is described as current, so marking is likely a later-stage item. Reasoning, not a finding.',
+    basedOn: ['Current projects: stage current'],
+  },
+  procurementFit: {
+    rating: 4,
+    reasoning:
+      'Nothing public establishes whether they subcontract marking or self-perform it.',
+    basedOn: [],
+  },
+  portfolioRelevance: {
+    rating: 6,
+    reasoning: 'Our verified work is in the same state and the same scope family. Demo data.',
+    basedOn: ['Operating regions: Gujarat'],
+  },
+  strategicValue: {
+    rating: 5,
+    reasoning: 'A repeatable EPC relationship, but nothing that opens a new category.',
+    basedOn: [],
+  },
+  matchedServices: {
+    value: ['highway-expressway-marking', 'road-studs-cat-eyes'],
+    status: 'inference',
+    sources: [{ url: 'https://example.com/demo-award', title: 'Award notice (demo)' }],
+    confidence: 0.7,
+  },
+  entryPoint: {
+    value:
+      'Their live widening package carries safety works that are normally subcontracted; approach before the marking package is let. Demo data.',
+    status: 'recommendation',
+    sources: [],
+    confidence: 0.6,
+  },
+  keyRisks: [
+    'Whether they subcontract marking at all is unestablished.',
+    'No package value, so the commercial size is a guess.',
+  ],
+  recommendedNextAction: {
+    value: 'Confirm the procurement route before spending outreach effort. Demo data.',
+    status: 'recommendation',
+    sources: [],
+    confidence: 0.7,
+  },
+  verdict:
+    'Demo verdict from the development fixture. A plausible account with a real scope match, held back by not knowing whether they subcontract this work. Worth nurturing rather than chasing.',
+};
+
+/**
+ * A canned decision-maker response for local development.
+ *
+ * `noIndividualsFound` is true. That is the case worth exercising: the agent
+ * returning roles and no names is the intended, safe outcome, and the screen
+ * that renders it needs to read as a complete answer rather than as an empty
+ * list. A fixture full of invented names would demonstrate exactly the
+ * behaviour this iteration exists to prevent.
+ */
+export const DEV_DECISION_MAKER_FIXTURE: DecisionMakerOutput = {
+  individuals: [],
+  roles: [
+    {
+      role: 'procurement_head',
+      likelyTitle: 'Head — Procurement & Contracts',
+      whyThisRole:
+        'Owns subcontract packages of this size at an EPC contractor. Demo data.',
+      suggestedApproach:
+        'Company switchboard, asking for procurement; or the vendor registration form if one is published.',
+    },
+    {
+      role: 'project_director',
+      likelyTitle: null,
+      whyThisRole:
+        'Decides scope and timing on the package itself, and can direct procurement. Demo data.',
+      suggestedApproach: 'Site office for the named package.',
+    },
+  ],
+  vendorOnboarding: {
+    value: null,
+    status: 'unknown',
+    sources: [],
+    confidence: 0.1,
+    note: 'No public vendor registration process could be found.',
+  },
+  primaryTarget: {
+    value: 'procurement_head',
+    status: 'recommendation',
+    sources: [],
+    confidence: 0.7,
+  },
+  openQuestions: [
+    'Confirm whether they run a vendor empanelment process.',
+    'Confirm who signs off subcontracts at this package size.',
+  ],
+  noIndividualsFound: true,
 };
